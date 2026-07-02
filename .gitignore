@@ -1,9 +1,39 @@
+# Python cache and bytecode
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.pytest_cache/
 .ipynb_checkpoints/
-data/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Environment variables
+.env
+.env.*
+
+# Data and generated artifacts
+/data/
+/output/
+/logs/
 *.csv
+*.parquet
+*.joblib
+*.pkl
+*.h5
+*.pt
+*.onnx
+*.model
 *.zip
 *.gz
-venv/
-.env
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
