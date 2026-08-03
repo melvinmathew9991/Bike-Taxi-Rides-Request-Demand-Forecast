@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bike-taxi-demand-forecast"
+version = "1.0.0"
+description = "Demand forecasting for bike-taxi ride requests"
+requires-python = ">=3.10"
+readme = "README.md"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+# testpaths keeps collection inside tests/. Without it, pytest picked up the
+# old root-level test_pipeline.py -- a script that ran a full training job at
+# collection time and called sys.exit().
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q --strict-markers"
+markers = [
+    "slow: exercises model fitting; deselect with -m 'not slow'",
+]
+filterwarnings = [
+    "error::FutureWarning",
+    "ignore::DeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+# The notebooks are a historical record of the original exploratory analysis,
+# not maintained source. They are excluded rather than rewritten, so the lint
+# signal reflects the code that is actually maintained.
+extend-exclude = ["Notebook"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
