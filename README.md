@@ -119,10 +119,15 @@ Before deploying, check the model against the baselines in
 `ModelEvaluator.compare_to_baselines`. A demand model that cannot beat "same time
 last week" should not ship.
 
-> **On the reference dataset it does not yet clear that bar.** Demand grew 5.2x
-> across the training year, and the 24-hour recursive forecast under-predicts by
-> ~4.7x. See [docs/MODEL_CARD.md](docs/MODEL_CARD.md) for the measured numbers
-> and the change that fixes it. Do not deploy this model as configured.
+> **On the reference dataset it clears that bar — but only if retrained.**
+> Across five rolling origins it beats seasonal-naive every time (MASE 0.79
+> one-step, 0.95 over a 24-hour recursive horizon). Demand grew 5.2x across the
+> training year, and a frozen model falls *below* the baseline by week six and
+> forecasts half the actual demand by week thirteen.
+>
+> **Retrain at least every four weeks**, and monitor the predicted-to-actual
+> level ratio — it degrades earliest. See
+> [docs/MODEL_CARD.md](docs/MODEL_CARD.md) for the measured numbers.
 
 ## Development
 

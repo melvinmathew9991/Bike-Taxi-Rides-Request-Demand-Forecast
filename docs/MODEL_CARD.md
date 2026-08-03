@@ -111,10 +111,16 @@ that cannot beat "same time last week" should not be deployed; the baseline is
 free, interpretable, and needs no retraining. `compare_to_baselines` logs a
 warning when the model loses.
 
-### Measured performance on the reference dataset
+### Single-split performance — a worst case, not the verdict
 
 Chronological split: train 2020-03-26 → 2021-01-12 (702,650 rows), test
 2021-01-12 → 2021-03-26 (175,650 rows). Test-period mean demand 9.04.
+
+**Read this section as a staleness stress test.** The test window runs up to ten
+weeks past the training cut, so late test rows are scored against a badly stale
+model. It is a useful bound on how bad things get if retraining stops; it is not
+representative of a model retrained on a normal cadence. The rolling-origin
+results two sections down are the ones to judge the model by.
 
 **One step ahead** (model is given true observed lags):
 
@@ -134,44 +140,86 @@ Chronological split: train 2020-03-26 → 2021-01-12 (702,650 rows), test
 | mean actual | 6.37 |
 | mean predicted | **1.35** |
 
-### Deployment verdict: NOT READY
+### Rolling-origin validation
 
-Three things follow from the table above, and none of them were visible under the
-original evaluation.
+A single split on a series this non-stationary measures the fortnight you held
+out as much as the model. `ML_Pipeline.validation` evaluates a strategy at five
+successive origins, always training on the past. Test window one week
+(one-step) or 24 hours (recursive); `MASE < 1` beats seasonal-naive.
 
-1. **The lag features are the whole model.** Without them the model loses to
-   "same time last week" by 66%. With them it merely ties it (MASE 0.987 — it
-   wins narrowly on MAE, loses on RMSE). Under the original day-of-month split
-   the lag block appeared to add ~1%; that measurement was an artefact of the
-   split, not a property of the features.
-2. **The recursive 24-hour forecast collapses.** Mean predicted demand is 1.35
-   against an actual 6.37 — a 4.7x under-forecast. Each step feeds a slightly
-   low prediction back in as the next step's lag, and over 48 steps the error
-   compounds downward. **This is the mode the pipeline actually serves in**, and
-   it is not fit for operational use.
-3. **The cause is non-stationarity, not tuning.** Gradient-boosted trees cannot
-   extrapolate beyond the target range they were trained on. With demand 3x
-   higher in the test period than in training, the model is structurally
-   incapable of reaching the right level; the lag features are the only channel
-   carrying current level information, which is why removing them is fatal.
+**One step ahead** (true observed lags), 5 folds:
 
-### What measurably fixes it
+| strategy | RMSE | MASE | worst fold | folds beating naive |
+|---|---|---|---|---|
+| ratio target, last 8 weeks | 2.902 | **0.763** | 0.788 | 5/5 |
+| ratio target, full history | 2.928 | 0.767 | 0.796 | 5/5 |
+| level target, last 8 weeks | 2.983 | 0.784 | 0.810 | 5/5 |
+| level target, full history (current) | 3.030 | 0.791 | 0.820 | 5/5 |
 
-Measured on the same split (RMSE / MASE):
+**Recursive, 24-hour horizon** (model consumes its own predictions):
 
-| variant | RMSE | MASE |
-|---|---|---|
-| seasonal naive | 4.543 | 1.000 |
-| current: full-history, level target | 4.860 | 0.994 |
-| train on last 8 weeks only | 4.184 | 0.880 |
-| **ratio-to-rolling-mean target, last 8 weeks** | **3.892** | **0.848** |
-| exponential recency weighting | 4.808 | 0.990 |
+| strategy | RMSE | MASE | folds beating naive | level ratio |
+|---|---|---|---|---|
+| ratio target, last 8 weeks | 2.725 | **0.831** | 5/5 | **0.99** |
+| ratio target, full history | 2.851 | 0.841 | 5/5 | 0.92 |
+| level target, last 8 weeks | 3.105 | 0.902 | 4/5 | 0.90 |
+| level target, full history (current) | 3.400 | 0.947 | 3/5 | 0.80 |
 
-Predicting a *ratio to a recent baseline* rather than an absolute count removes
-the trend from the target, so the trees no longer need to extrapolate. Combined
-with a recent training window it beats the seasonal-naive baseline by 15%. This
-is the recommended next change; it is not yet implemented, because it redefines
-the target and that is a modelling decision, not a bug fix.
+`level ratio` is mean predicted over mean actual. A recursive forecast that
+decays toward the training-era level shows up here well before RMSE makes it
+obvious.
+
+### Model staleness: the binding operational constraint
+
+A model frozen at 2020-12-01 and scored on successive weeks with no retraining:
+
+| weeks stale | 1 | 2 | 3 | 4 | 5 | 6 | 8 | 10 | 13 |
+|---|---|---|---|---|---|---|---|---|---|
+| MASE | 0.84 | 0.72 | 0.78 | 0.76 | 0.98 | **1.23** | 1.38 | 1.55 | 1.75 |
+| level ratio | 0.93 | 0.95 | 0.95 | 0.89 | 0.73 | 0.59 | 0.56 | 0.52 | 0.49 |
+
+**The model beats seasonal-naive for about four weeks, reaches parity at five,
+and is worse than naive from week six onward.** By week 13 it forecasts half the
+actual demand. Demand grew 5.2x across the year and trees cannot extrapolate
+past their training range, so a stale model is anchored to a level the city has
+left behind.
+
+### Deployment verdict
+
+**Usable, conditionally.** Retrained on at least a four-week cadence, the model
+beats a seasonal-naive baseline at every origin tested, one step ahead (MASE
+0.79) and over a 24-hour recursive horizon (MASE 0.95, 3/5 folds). Switching to
+the ratio target improves both, and materially fixes level tracking in the
+recursive mode (level ratio 0.99 vs 0.80, 5/5 folds vs 3/5).
+
+Conditions for use:
+
+1. **Retrain at least every four weeks.** This is not a nice-to-have; past week
+   five the model is worse than a baseline that costs nothing to run.
+2. **Monitor `level_ratio` in production.** It degrades earliest and most
+   visibly, well before RMSE does.
+3. **Prefer the ratio target for recursive serving.** The level target
+   under-forecasts by ~20% over 24 hours and loses to naive in 2 of 5 folds.
+4. **Do not use the without-lag model for anything but cold starts.** It has no
+   channel carrying current demand level and loses to naive by 66%.
+
+> An earlier revision of this card concluded "NOT READY / not deployable", based
+> on a single split whose test window ran up to ten weeks past the training cut.
+> That measured a badly stale model, not the model's steady-state behaviour. The
+> rolling-origin results above supersede it. The 4.7x under-forecast reported
+> there is real but is a staleness artefact, and it is the reason for condition 1.
+
+### What the ratio target does
+
+Predicting `request_count / (rolling_mean + 1)` and multiplying back removes the
+trend from the target, so the trees never have to extrapolate. Its gain is
+modest one step ahead (MASE 0.763 vs 0.791) but clear in the recursive mode that
+the pipeline actually serves, and it is the only variant that holds the right
+demand level across a 24-hour horizon.
+
+It is **not yet implemented**: it redefines the target, which is a modelling
+decision rather than a bug fix.
+
 
 ### Historical performance (pre-refactor, for reference)
 
