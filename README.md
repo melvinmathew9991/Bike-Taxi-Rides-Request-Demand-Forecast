@@ -16,7 +16,7 @@ raw bookings
 
 ```bash
 pip install -r requirements.txt
-pytest                                    # 115 tests, no data needed
+pytest                                    # 135 tests, no data needed
 python run_pipeline.py --raw-data data/raw_data.csv --n-clusters 50
 streamlit run streamlit_app.py            # dashboard over pipeline output
 ```
