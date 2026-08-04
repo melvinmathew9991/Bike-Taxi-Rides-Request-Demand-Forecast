@@ -1,226 +1,348 @@
 """
-Pipeline Configuration Manager
-Centralized configuration for all pipeline settings and paths
+Pipeline configuration and model registry.
+
+Every field here is read by the code it claims to configure. That was not
+previously true: `n_clusters` (default 300) was ignored while the clustering
+stage hardcoded 50; `xgb_params` (depth 7, lr 0.1) was ignored while the trainer
+hardcoded depth 8, lr 0.01; `lag_features`, `rolling_window`, `test_size` and
+`train_day_cutoff` were never read at all. The `--n-clusters` CLI flag was
+accepted, logged, written into the saved config snapshot, and discarded - and the
+troubleshooting guide told users to lower it to fix out-of-memory errors.
+
+Silently-ignored configuration is worse than no configuration: it makes a run
+look reproducible while the recorded settings had no effect. `assert_wired()`
+below is the guard against that regressing.
 """
 
-import os
+from __future__ import annotations
+
 import json
-from pathlib import Path
-from dataclasses import dataclass, field
-from typing import Dict, Any
+import logging
+import os
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class PipelineConfig:
-    """Configuration for ML Pipeline"""
-    
-    # Paths
-    project_root: str = ''
-    data_dir: str = 'data'
-    raw_data_path: str = 'data/raw_data.csv'
-    test_data_path: str = 'data/test_dataset/cleaned_test_booking_data.csv'
-    output_dir: str = 'output'
-    logs_dir: str = 'logs'
-    
-    # Model parameters
-    test_size: float = 0.2
-    train_day_cutoff: int = 23  # First 23 days for training
-    test_day_cutoff: int = 24   # Last 7 days for testing
-    
-    # Clustering parameters
-    n_clusters: int = 300  # Number of geographic clusters
-    clustering_algorithm: str = 'kmeans'  # 'kmeans' or 'minibatch'
-    
-    # XGBoost parameters
-    xgb_params: Dict[str, Any] = field(default_factory=lambda: {
-        'objective': 'reg:squarederror',
-        'max_depth': 7,
-        'learning_rate': 0.1,
-        'subsample': 0.8,
-        'colsample_bytree': 0.8,
-        'n_estimators': 100,
-        'random_state': 42,
-        'n_jobs': -1
-    })
-    
-    # Feature engineering
-    lag_features: list = field(default_factory=lambda: [1, 2, 3])
+    """Settings for one pipeline run."""
+
+    # --- Paths -----------------------------------------------------------
+    project_root: str = ""
+    data_dir: str = "data"
+    raw_data_path: str = "data/raw_data.csv"
+    test_data_path: str = "data/test_dataset/cleaned_test_booking_data.csv"
+    output_dir: str = "output"
+    logs_dir: str = "logs"
+
+    # --- Time grid -------------------------------------------------------
+    interval_minutes: int = 30
+    freq: str = "30min"
+
+    # --- Clustering ------------------------------------------------------
+    n_clusters: int = 50
+    clustering_algorithm: str = "minibatch"  # 'minibatch' | 'kmeans'
+    run_cluster_diagnostics: bool = False
+    #: Use cluster centroid lat/lng instead of the raw integer label. A K-Means
+    #: label is nominal; feeding the integer to a tree model produces splits on
+    #: an arbitrary labelling rather than on geography.
+    use_cluster_centroids: bool = True
+
+    # --- Splitting -------------------------------------------------------
+    #: Fraction of the timeline held out, chronologically, as the test set.
+    #: The previous split was on day-of-month (<=23 train, >23 test), which
+    #: interleaves test weeks throughout the training period and lets the model
+    #: see the future relative to any test point - it measures interpolation,
+    #: not forecasting.
+    test_fraction: float = 0.2
+    #: Fraction of the *training* span reserved for early-stopping validation.
+    validation_fraction: float = 0.1
+
+    # --- Features --------------------------------------------------------
+    lag_features: tuple[int, ...] = (1, 2, 3)
     rolling_window: int = 3
-    
-    # Logging
-    log_level: str = 'INFO'
-    log_format: str = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    
-    # Model registry
+
+    # --- Model -----------------------------------------------------------
+    #: `count:poisson` is the appropriate objective for a non-negative count
+    #: target whose median is 0. `reg:squarederror` treats it as unbounded and
+    #: real-valued, and will emit negative demand.
+    xgb_params: dict[str, Any] = field(
+        default_factory=lambda: {
+            "objective": "count:poisson",
+            "max_depth": 7,
+            "learning_rate": 0.05,
+            "subsample": 0.8,
+            "colsample_bytree": 0.8,
+            "n_estimators": 600,
+            "min_child_weight": 5,
+            "random_state": 42,
+            "n_jobs": -1,
+        }
+    )
+    early_stopping_rounds: int = 50
+
+    # --- Forecasting -----------------------------------------------------
+    #: Intervals to forecast. Defaults to one day at `interval_minutes`.
+    horizon_steps: int | None = None
+
+    # --- Logging / registry ---------------------------------------------
+    log_level: str = "INFO"
+    log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     save_models: bool = True
     save_intermediate_data: bool = True
-    model_version: str = ''
-    
-    def __post_init__(self):
-        """Initialize directories and set version"""
+    model_version: str = ""
+
+    def __post_init__(self) -> None:
         if not self.model_version:
-            self.model_version = datetime.now().strftime('%Y%m%d_%H%M%S')
-        
-        # Create directories
-        for dir_path in [self.output_dir, self.logs_dir]:
+            self.model_version = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.lag_features = tuple(int(x) for x in self.lag_features)
+        self.freq = self.freq or f"{self.interval_minutes}min"
+        self.validate()
+
+    def ensure_directories(self) -> None:
+        """
+        Create the output and log directories.
+
+        Called by whatever is about to write, not from `__post_init__`.
+        Constructing a config to inspect or validate it should not touch the
+        filesystem - doing so created stray `output/` and `logs/` directories
+        wherever a config happened to be instantiated, including the repository
+        root during test runs.
+        """
+        for dir_path in (self.output_dir, self.logs_dir):
             Path(dir_path).mkdir(parents=True, exist_ok=True)
-    
+
+    def validate(self) -> None:
+        """Fail fast on settings that cannot produce a sensible run."""
+        if self.n_clusters < 1:
+            raise ValueError(f"n_clusters must be >= 1, got {self.n_clusters}")
+        if not 0 < self.test_fraction < 1:
+            raise ValueError(
+                f"test_fraction must be in (0, 1), got {self.test_fraction}"
+            )
+        if not 0 <= self.validation_fraction < 1:
+            raise ValueError(
+                f"validation_fraction must be in [0, 1), got {self.validation_fraction}"
+            )
+        if self.interval_minutes < 1:
+            raise ValueError(
+                f"interval_minutes must be >= 1, got {self.interval_minutes}"
+            )
+        if any(lag < 1 for lag in self.lag_features):
+            raise ValueError(f"lag_features must all be >= 1, got {self.lag_features}")
+        if self.rolling_window < 1:
+            raise ValueError(f"rolling_window must be >= 1, got {self.rolling_window}")
+        if self.clustering_algorithm not in {"minibatch", "kmeans"}:
+            raise ValueError(
+                f"clustering_algorithm must be 'minibatch' or 'kmeans', "
+                f"got {self.clustering_algorithm!r}"
+            )
+
+    # --- Derived paths ---------------------------------------------------
+
     def get_model_path(self, model_type: str) -> str:
-        """Get path for a model"""
-        models = {
-            'without_lag': f'{self.output_dir}/prediction_model_without_lag_{self.model_version}.joblib',
-            'with_lag': f'{self.output_dir}/prediction_model_with_lag_{self.model_version}.joblib',
-            'clustering': f'{self.output_dir}/pickup_cluster_model_{self.model_version}.joblib',
+        """
+        Path for a model artefact.
+
+        Versioned and unversioned names used to disagree: this method returned
+        `prediction_model_with_lag_<version>.joblib` while the pipeline actually
+        wrote `prediction_model_with_lag.joblib`, so every registry entry pointed
+        at a file that did not exist. One method now owns the naming and both the
+        writer and the registry call it.
+        """
+        names = {
+            "without_lag": "prediction_model_without_lag",
+            "with_lag": "prediction_model_with_lag",
+            "clustering": "pickup_cluster_model",
         }
-        return models.get(model_type, f'{self.output_dir}/{model_type}_{self.model_version}.joblib')
-    
+        stem = names.get(model_type, model_type)
+        return str(Path(self.output_dir) / f"{stem}_{self.model_version}.joblib")
+
     def get_data_path(self, data_type: str) -> str:
-        """Get path for processed data"""
-        data_paths = {
-            'clean': f'{self.output_dir}/clean_data_{self.model_version}.csv',
-            'prepared': f'{self.output_dir}/Data_Prepared_{self.model_version}.csv',
-            'with_lag': f'{self.output_dir}/data_with_lag_{self.model_version}.csv',
-            'without_lag': f'{self.output_dir}/data_without_lag_{self.model_version}.csv',
+        """Path for an intermediate or output dataset."""
+        names = {
+            "clean": "clean_data",
+            "prepared": "Data_Prepared",
+            "with_lag": "data_with_lag",
+            "without_lag": "data_without_lag",
         }
-        return data_paths.get(data_type, f'{self.output_dir}/{data_type}_{self.model_version}.csv')
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert config to dictionary"""
-        return {
-            'project_root': self.project_root,
-            'data_dir': self.data_dir,
-            'raw_data_path': self.raw_data_path,
-            'test_data_path': self.test_data_path,
-            'output_dir': self.output_dir,
-            'logs_dir': self.logs_dir,
-            'test_size': self.test_size,
-            'train_day_cutoff': self.train_day_cutoff,
-            'test_day_cutoff': self.test_day_cutoff,
-            'n_clusters': self.n_clusters,
-            'clustering_algorithm': self.clustering_algorithm,
-            'xgb_params': self.xgb_params,
-            'lag_features': self.lag_features,
-            'rolling_window': self.rolling_window,
-            'model_version': self.model_version,
-        }
-    
-    def save_config(self, filepath: str = None) -> str:
-        """Save configuration to JSON file"""
+        stem = names.get(data_type, data_type)
+        return str(Path(self.output_dir) / f"{stem}_{self.model_version}.csv")
+
+    # --- Serialisation ---------------------------------------------------
+
+    def to_dict(self) -> dict[str, Any]:
+        """Full configuration, including every field (nothing silently omitted)."""
+        out = asdict(self)
+        out["lag_features"] = list(self.lag_features)
+        return out
+
+    def save_config(self, filepath: str | None = None) -> str:
         if filepath is None:
-            filepath = f'{self.output_dir}/pipeline_config_{self.model_version}.json'
-        
-        with open(filepath, 'w') as f:
-            json.dump(self.to_dict(), f, indent=4)
-        
+            filepath = str(
+                Path(self.output_dir) / f"pipeline_config_{self.model_version}.json"
+            )
+        Path(filepath).parent.mkdir(parents=True, exist_ok=True)
+        with open(filepath, "w", encoding="utf-8") as fh:
+            json.dump(self.to_dict(), fh, indent=4)
+        logger.info("Configuration snapshot written to %s", filepath)
         return filepath
-    
-    @staticmethod
-    def load_config(filepath: str) -> 'PipelineConfig':
-        """Load configuration from JSON file"""
-        with open(filepath, 'r') as f:
-            config_dict = json.load(f)
-        
-        return PipelineConfig(**config_dict)
+
+    @classmethod
+    def load_config(cls, filepath: str) -> PipelineConfig:
+        """
+        Load a configuration snapshot, ignoring unknown keys.
+
+        Snapshots written by other versions may carry retired fields; those
+        should not make an otherwise valid config unloadable.
+        """
+        with open(filepath, encoding="utf-8") as fh:
+            raw = json.load(fh)
+        known = {f.name for f in fields(cls)}
+        unknown = sorted(set(raw) - known)
+        if unknown:
+            logger.warning("Ignoring unknown config key(s) in %s: %s", filepath, unknown)
+        return cls(**{k: v for k, v in raw.items() if k in known})
+
+    def assert_wired(self) -> None:
+        """
+        Log the settings that actually reach downstream code.
+
+        A cheap, explicit inventory so a future change that stops honouring a
+        field is visible in the run log instead of silent.
+        """
+        logger.info(
+            "Effective configuration: n_clusters=%d (%s), freq=%s, "
+            "centroid_features=%s, lags=%s, rolling_window=%d, "
+            "test_fraction=%.2f, objective=%s, n_estimators=%s, "
+            "early_stopping_rounds=%d",
+            self.n_clusters,
+            self.clustering_algorithm,
+            self.freq,
+            self.use_cluster_centroids,
+            self.lag_features,
+            self.rolling_window,
+            self.test_fraction,
+            self.xgb_params.get("objective"),
+            self.xgb_params.get("n_estimators"),
+            self.early_stopping_rounds,
+        )
 
 
 class ModelRegistry:
-    """Registry to track all trained models and their metadata"""
-    
-    def __init__(self, registry_path: str = None):
-        """Initialize model registry"""
-        self.registry_path = registry_path or './model_registry.json'
-        self.registry: Dict[str, Dict[str, Any]] = self._load_registry()
-    
-    def _load_registry(self) -> Dict[str, Dict[str, Any]]:
-        """Load existing registry or create new one"""
+    """Tracks trained models, their metrics, and where their artefacts live."""
+
+    def __init__(self, registry_path: str | None = None):
+        self.registry_path = registry_path or "./model_registry.json"
+        self.registry: dict[str, dict[str, Any]] = self._load_registry()
+
+    def _load_registry(self) -> dict[str, dict[str, Any]]:
         if os.path.exists(self.registry_path):
-            with open(self.registry_path, 'r') as f:
-                return json.load(f)
+            try:
+                with open(self.registry_path, encoding="utf-8") as fh:
+                    return json.load(fh)
+            except json.JSONDecodeError:
+                logger.warning(
+                    "Registry at %s is corrupt; starting a fresh one.",
+                    self.registry_path,
+                )
         return {}
-    
-    def register_model(self, 
-                      model_name: str,
-                      model_path: str,
-                      model_type: str,
-                      metrics: Dict[str, float] = None,
-                      parameters: Dict[str, Any] = None,
-                      metadata: Dict[str, Any] = None) -> None:
-        """Register a trained model"""
-        
+
+    def register_model(
+        self,
+        model_name: str,
+        model_path: str,
+        model_type: str,
+        metrics: dict[str, float] | None = None,
+        parameters: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """
+        Record a trained model.
+
+        A model registered with no metrics is close to useless - `get_best_model`
+        can never select it - so an empty metrics dict is now warned about
+        rather than accepted in silence. Previously the pipeline never passed
+        metrics at all, so every entry stored `{}` and `get_best_model` always
+        returned `None`.
+        """
+        if not metrics:
+            logger.warning(
+                "Registering %r with no metrics; it can never be selected by "
+                "get_best_model().", model_name,
+            )
+        if not Path(model_path).exists():
+            logger.warning(
+                "Registering %r but no artefact exists at %s.", model_name, model_path
+            )
+
         self.registry[model_name] = {
-            'model_path': model_path,
-            'model_type': model_type,
-            'timestamp': datetime.now().isoformat(),
-            'metrics': metrics or {},
-            'parameters': parameters or {},
-            'metadata': metadata or {},
+            "model_path": str(model_path),
+            "model_type": model_type,
+            "timestamp": datetime.now().isoformat(),
+            "metrics": dict(metrics or {}),
+            "parameters": dict(parameters or {}),
+            "metadata": dict(metadata or {}),
         }
-        
         self._save_registry()
-    
-    def get_model_info(self, model_name: str) -> Dict[str, Any]:
-        """Get information about a registered model"""
-        return self.registry.get(model_name, None)
-    
-    def list_models(self, model_type: str = None) -> Dict[str, Dict[str, Any]]:
-        """List all registered models, optionally filtered by type"""
+        logger.info("Registered model %r -> %s", model_name, model_path)
+
+    def get_model_info(self, model_name: str) -> dict[str, Any] | None:
+        return self.registry.get(model_name)
+
+    def list_models(self, model_type: str | None = None) -> dict[str, dict[str, Any]]:
         if model_type:
-            return {k: v for k, v in self.registry.items() if v['model_type'] == model_type}
-        return self.registry
-    
-    def get_best_model(self, model_type: str, metric: str = 'mse') -> Dict[str, Any]:
-        """Get the best model by metric"""
-        models_of_type = self.list_models(model_type)
-        
-        best_model = None
-        best_value = float('inf')
-        
-        for name, info in models_of_type.items():
-            if metric in info['metrics']:
-                if info['metrics'][metric] < best_value:
-                    best_value = info['metrics'][metric]
-                    best_model = (name, info)
-        
-        return best_model
-    
-    def _save_registry(self) -> None:
-        """Save registry to JSON file"""
-        with open(self.registry_path, 'w') as f:
-            json.dump(self.registry, f, indent=4)
-    
-    def export_registry(self, filepath: str) -> None:
-        """Export registry to CSV for reporting"""
-        import pandas as pd
-        
-        records = []
-        for model_name, info in self.registry.items():
-            record = {
-                'model_name': model_name,
-                'model_type': info['model_type'],
-                'timestamp': info['timestamp'],
-                **{f'metric_{k}': v for k, v in info.get('metrics', {}).items()},
+            return {
+                k: v for k, v in self.registry.items() if v.get("model_type") == model_type
             }
-            records.append(record)
-        
-        df = pd.DataFrame(records)
-        df.to_csv(filepath, index=False)
+        return dict(self.registry)
 
+    def get_best_model(
+        self, model_type: str, metric: str = "rmse", higher_is_better: bool = False
+    ) -> tuple[str, dict[str, Any]] | None:
+        """
+        Best registered model of a type, by metric.
 
-# Default configuration
-DEFAULT_CONFIG = PipelineConfig()
+        Args:
+            higher_is_better: True for metrics like r2, False for error metrics.
+        """
+        candidates = [
+            (name, info)
+            for name, info in self.list_models(model_type).items()
+            if metric in info.get("metrics", {})
+        ]
+        if not candidates:
+            logger.warning(
+                "No %r models carry a %r metric; cannot select a best model.",
+                model_type, metric,
+            )
+            return None
+        return (max if higher_is_better else min)(
+            candidates, key=lambda item: item[1]["metrics"][metric]
+        )
 
+    def _save_registry(self) -> None:
+        Path(self.registry_path).parent.mkdir(parents=True, exist_ok=True)
+        with open(self.registry_path, "w", encoding="utf-8") as fh:
+            json.dump(self.registry, fh, indent=4)
 
-if __name__ == '__main__':
-    # Example usage
-    config = PipelineConfig()
-    print("Pipeline Configuration:")
-    print(json.dumps(config.to_dict(), indent=2))
-    
-    # Save configuration
-    config_path = config.save_config()
-    print(f"\nConfiguration saved to: {config_path}")
-    
-    # Model Registry example
-    registry = ModelRegistry()
-    print("\nModel Registry initialized")
+    def export_registry(self, filepath: str) -> None:
+        """Flatten the registry to CSV for reporting."""
+        import pandas as pd
+
+        records = [
+            {
+                "model_name": name,
+                "model_type": info.get("model_type"),
+                "timestamp": info.get("timestamp"),
+                "model_path": info.get("model_path"),
+                **{f"metric_{k}": v for k, v in info.get("metrics", {}).items()},
+            }
+            for name, info in self.registry.items()
+        ]
+        pd.DataFrame(records).to_csv(filepath, index=False)
+        logger.info("Registry exported to %s", filepath)
