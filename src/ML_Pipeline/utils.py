@@ -14,6 +14,8 @@ effect no importer asked for.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -23,6 +25,54 @@ from ML_Pipeline.features import (  # noqa: F401  (re-exported for compatibility
 )
 
 EARTH_RADIUS_KM = 6371.0088
+
+#: Magic bytes at the start of a gzip member.
+GZIP_MAGIC = b"\x1f\x8b"
+
+
+def read_csv_any(source, **kwargs) -> pd.DataFrame:
+    """
+    Read a CSV whose compression is not reliably indicated by its name.
+
+    Four near-identical copies of this logic existed - in `pipeline`,
+    `prediction_pipeline`, `streamlit_app` and `scripts/compare_strategies` -
+    each a `try` on gzip with a fallback to plain. They existed because the
+    pipeline wrote gzip-compressed files under a bare `.csv` extension, which
+    `pandas` cannot infer from, so a plain `pd.read_csv` on one failed with
+    `UnicodeDecodeError: invalid start byte`.
+
+    Pipeline outputs are now written as `.csv.gz` and need none of this - pandas
+    infers from the extension. This remains for *input* files, which are supplied
+    by whoever runs the pipeline and in the reference dataset are gzip under a
+    `.csv` name.
+
+    Detection is by content rather than by exception: a gzip member starts with
+    `1f 8b`, so the file says what it is. The previous approach caught
+    `(OSError, EOFError, ValueError)` around a full parse, which also swallows
+    genuine malformed-CSV errors and reports them as "not gzip".
+
+    Args:
+        source: Path, or an open binary file object (a Streamlit upload).
+        **kwargs: Passed through to `pd.read_csv`.
+
+    Returns:
+        The parsed frame.
+    """
+    kwargs.setdefault("low_memory", False)
+
+    if hasattr(source, "read"):
+        head = source.read(2)
+        source.seek(0)
+        compression = "gzip" if head == GZIP_MAGIC else None
+        return pd.read_csv(source, compression=compression, **kwargs)
+
+    path = Path(source)
+    with open(path, "rb") as fh:
+        head = fh.read(2)
+    if head == GZIP_MAGIC:
+        return pd.read_csv(path, compression="gzip", **kwargs)
+    # Let pandas infer, so `.csv.gz`, `.zip` and friends keep working.
+    return pd.read_csv(path, **kwargs)
 
 
 def remove_duplicates(df: pd.DataFrame, cols: list[str] | None = None) -> pd.DataFrame:

@@ -71,12 +71,17 @@ def latest_artifact(output_dir: str | Path, data_type: str) -> Path | None:
         return None
 
     stem = DATA_STEMS.get(data_type, data_type)
-    versioned = sorted(directory.glob(f"{stem}_*.csv"))
-    if versioned:
-        return versioned[-1]
+    # `.csv.gz` is what the pipeline writes now; bare `.csv` is what it wrote
+    # before, and output directories from earlier runs should keep working.
+    for pattern in (f"{stem}_*.csv.gz", f"{stem}_*.csv"):
+        versioned = sorted(directory.glob(pattern))
+        if versioned:
+            return versioned[-1]
 
-    legacy = directory / f"{stem}.csv"
-    return legacy if legacy.exists() else None
+    for legacy in (directory / f"{stem}.csv.gz", directory / f"{stem}.csv"):
+        if legacy.exists():
+            return legacy
+    return None
 
 
 def latest_version(output_dir: str | Path) -> str | None:
@@ -249,7 +254,11 @@ class PipelineConfig:
     def get_data_path(self, data_type: str) -> str:
         """Path for an intermediate or output dataset."""
         stem = DATA_STEMS.get(data_type, data_type)
-        return str(Path(self.output_dir) / f"{stem}_{self.model_version}.csv")
+        # `.csv.gz`, not `.csv`. These files are gzip-compressed, and naming them
+        # `.csv` meant pandas could not infer that - so every reader needed a
+        # sniffing fallback, and an outside consumer running a plain
+        # `pd.read_csv` got a UnicodeDecodeError on byte 0x8b.
+        return str(Path(self.output_dir) / f"{stem}_{self.model_version}.csv.gz")
 
     # --- Serialisation ---------------------------------------------------
 

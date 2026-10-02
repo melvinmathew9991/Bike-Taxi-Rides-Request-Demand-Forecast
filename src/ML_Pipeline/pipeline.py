@@ -32,6 +32,7 @@ from ML_Pipeline.data_prep_basic import data_prep_basic
 from ML_Pipeline.data_prep_geospatial import data_prep_geospatial
 from ML_Pipeline.model_training import model_training
 from ML_Pipeline.prediction_pipeline import prediction_pipeline
+from ML_Pipeline.utils import read_csv_any
 
 logger = logging.getLogger(__name__)
 
@@ -101,10 +102,7 @@ class MLPipeline:
                 f"Raw data not found at {path}. The dataset is git-ignored "
                 "because it carries personal data; see docs/DATA_GOVERNANCE.md."
             )
-        try:
-            self.df_raw = pd.read_csv(path, low_memory=False, compression="gzip")
-        except (OSError, EOFError, ValueError):
-            self.df_raw = pd.read_csv(path, low_memory=False, compression=None)
+        self.df_raw = read_csv_any(path)
 
         logger.info(
             "Loaded %s rows x %d columns (%.1f MB): %s",

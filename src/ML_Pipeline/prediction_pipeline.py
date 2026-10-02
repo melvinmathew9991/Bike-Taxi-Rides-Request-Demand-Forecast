@@ -35,6 +35,7 @@ from ML_Pipeline.forecast import (
     forecast_direct,
     forecast_recursive,
 )
+from ML_Pipeline.utils import read_csv_any
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +44,7 @@ DEFAULT_INTERVAL_MINUTES = 30
 
 def _read_bookings(path: str | Path) -> pd.DataFrame:
     """Read booking-level CSV, gzip-compressed or not."""
-    try:
-        return pd.read_csv(path, compression="gzip", low_memory=False)
-    except (OSError, EOFError, ValueError):
-        return pd.read_csv(path, compression=None, low_memory=False)
+    return read_csv_any(path)
 
 
 def _seed_history(
@@ -245,5 +243,5 @@ def _write(df: pd.DataFrame, path: str | Path) -> None:
     """Write a forecast frame, gzip-compressed, creating parent dirs."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(path, index=False, compression="gzip")
+    df.to_csv(path, index=False, compression="gzip")  # path carries .csv.gz
     logger.info("Wrote %d forecast rows to %s", len(df), path)
