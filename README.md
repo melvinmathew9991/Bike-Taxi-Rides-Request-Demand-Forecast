@@ -122,6 +122,13 @@ The cost is a serving precondition: recursive forecasting needs **7 days of
 contiguous history per cluster**, which the pipeline supplies from the demand
 grid rather than from the test file.
 
+The gain is also horizon-dependent. Within a 48-step horizon the new lags are
+always real observations; past that they start consuming the model's own
+predictions. Measured MASE against seasonal-naive: **0.80 at one day, 0.80 at
+two, 0.88 at four, 0.99 at one week, 1.07 at two**. So keep `--horizon-steps` at
+or below ~96; beyond a week the model only ties a baseline that costs nothing.
+See [docs/MODEL_CARD.md](docs/MODEL_CARD.md) for the table.
+
 Three properties of the target drive the design:
 
 - **It is an over-dispersed count** (mean 4.22, variance ~46, 37% zeros). The objective is

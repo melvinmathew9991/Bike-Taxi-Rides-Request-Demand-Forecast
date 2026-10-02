@@ -136,6 +136,13 @@ representative of a model retrained on a normal cadence.
 | model **without lag** | 8.628 | 4.820 | 1.752 | loses badly |
 | cluster historical mean | 9.498 | 6.578 | 2.282 | loses badly |
 
+All four rows are scored on the **same** window — the lag model's test split, so
+they are directly comparable. Note this makes the without-lag figure here
+(8.628) differ slightly from the 8.558 in `model_registry.json`, which scores it
+on its own split: without a weekly lag it needs no 336-interval warm-up, so its
+test window starts ~2 days earlier and is 3,350 rows longer. Same model, same
+settings, different window.
+
 **24 hours ahead** (recursive; the model consumes its own predictions):
 
 | | value |
@@ -160,6 +167,36 @@ representative of a model retrained on a normal cadence.
 > The level ratio is the one to note. A recursive forecast anchored to its
 > training-era level used to under-forecast demand roughly five-fold over a day.
 > With a weekly lag carrying the current level into every step, it tracks.
+
+### The gain depends on the forecast horizon
+
+The two new lags are only *predictions* once the horizon reaches past them. Over
+a 48-step horizon, `lag_48` and `lag_336` are always real observations, so the
+model has two strong anchors at every step and only `lag_1/2/3` compound. Past 48
+steps `lag_48` starts consuming the model's own output, and past 336 so does
+`lag_336`.
+
+Measured by recursive backtest on the reference dataset, against seasonal-naive
+on the same rows:
+
+| horizon | | share of steps where `lag_48` is a prediction | RMSE | MASE | level ratio |
+|---|---|---|---|---|---|
+| 48 | 1 day | 0% | 3.242 | **0.800** | 0.90 |
+| 96 | 2 days | 50% | 3.615 | **0.803** | 1.06 |
+| 192 | 4 days | 75% | 4.521 | 0.876 | 0.91 |
+| 336 | 1 week | 86% | 5.239 | 0.989 | 0.84 |
+| 672 | 2 weeks | 93% | 5.733 | **1.065** | 0.78 |
+
+**The deploy gate is cleared comfortably out to about two days, marginally at
+four, and not at all beyond a week.** At a two-week horizon the model is worse
+than seasonal-naive and should not be used; the baseline is free.
+
+This is a property of the lag set, not a regression — at every horizon measured
+the current model beats what preceded it (recursive RMSE 8.261 at one day
+before these lags). But it means the headline MASE of 0.809 is a *one-step*
+figure, and the recursive figure of 0.800 is a *one-day* figure. Neither
+generalises to an arbitrary horizon, and `run_pipeline.py --horizon-steps` will
+happily accept one.
 
 ### Rolling-origin validation
 
@@ -238,14 +275,18 @@ Conditions for use:
 2. **Monitor `level_ratio` in production.** It degrades earliest and most
    visibly, well before RMSE does. Nothing in the repository computes it on a
    schedule yet.
-3. **Supply 7 days of contiguous history per cluster.** The weekly lag makes
+3. **Keep the horizon at or below two days.** The default is one day. The gain
+   decays as the new lags start consuming the model's own predictions, and by a
+   one-week horizon the model only ties the baseline — see the horizon table
+   above. Nothing in the code enforces this; `--horizon-steps` accepts any value.
+4. **Supply 7 days of contiguous history per cluster.** The weekly lag makes
    this a hard precondition of recursive serving, not a preference — the
    forecaster refuses rather than guesses if it is missing. Note that gaps are
    filled with zero and a warning, which matters more over a week than it did
    over 90 minutes.
-4. **Do not use the without-lag model for anything but cold starts.** It has no
+5. **Do not use the without-lag model for anything but cold starts.** It has no
    channel carrying current demand level and loses to naive by 75%.
-5. **Run the baseline comparison at every retrain.** It is not yet wired into
+6. **Run the baseline comparison at every retrain.** It is not yet wired into
    the pipeline, so it has to be run deliberately. If the model stops beating
    seasonal-naive, ship the baseline.
 
@@ -318,9 +359,11 @@ as a record of the original work.
    is more consequential over a week than over the 90 minutes it used to be.
 4. **Trained through the COVID-19 period.** Demand patterns in 2020-21 are not a
    reliable guide to normal operation. Retrain before relying on it.
-5. **Recursive error compounding.** The lag model's accuracy degrades with each
-   step. Check `recursive_rmse` against `test_rmse` in the model bundle; the gap
-   is the real cost.
+5. **Recursive error compounding, quantified.** MASE over a recursive horizon
+   goes 0.80 at one day, 0.88 at four days, 0.99 at one week and 1.07 at two —
+   see the horizon table above. `recursive_rmse` in the bundle records the
+   one-day figure only. Note it is *not* comparable to `test_rmse`: the two are
+   measured on different windows.
 6. **Fulfilled requests, not latent demand.** The target counts logged booking
    requests. Demand that never materialised because no rider was nearby is
    invisible — see the feedback-loop discussion in `DATA_GOVERNANCE.md`.
