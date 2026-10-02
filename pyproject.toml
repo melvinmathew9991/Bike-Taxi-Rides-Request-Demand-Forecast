@@ -41,9 +41,18 @@ plots = [
     "matplotlib>=3.7,<4.0",
     "scipy>=1.10,<2.0",
 ]
+# The forecast API. Kept out of the core so the pipeline installs without a web
+# stack: training and serving have genuinely different dependency needs.
+serving = [
+    "fastapi>=0.110,<1.0",
+    "pydantic>=2.0,<3.0",
+    "uvicorn>=0.27,<1.0",
+]
 dev = [
     "pytest>=7.4,<9.0",
     "ruff>=0.4,<1.0",
+    # fastapi.testclient needs httpx; without it the API tests cannot run.
+    "httpx>=0.24,<1.0",
 ]
 # Historical exploratory notebooks; not needed to run the pipeline or the tests.
 notebooks = [
@@ -85,3 +94,15 @@ extend-exclude = ["Notebook"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI declares request parameters by calling Query/Path/Body/Depends in the
+# default, which B008 flags as a mutable default. It is the framework's intended
+# usage and the objects are immutable descriptors, so they are allowlisted rather
+# than worked around.
+extend-immutable-calls = [
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.Depends",
+]

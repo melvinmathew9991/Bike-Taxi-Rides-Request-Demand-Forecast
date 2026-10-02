@@ -59,6 +59,7 @@ def run_pipeline(
     config: PipelineConfig | None = None,
     full_run: bool = True,
     stages: list[str] | None = None,
+    promote: bool = False,
 ) -> dict:
     """
     Run the pipeline and register the resulting models.
@@ -67,6 +68,7 @@ def run_pipeline(
         config: Pipeline configuration.
         full_run: Run every stage.
         stages: Subset to run: any of `data`, `features`, `model`, `predict`.
+        promote: Mark the trained lag model as the one the serving API loads.
     """
     config = config or PipelineConfig()
     logger.info("Configuration:\n%s", json.dumps(config.to_dict(), indent=2, default=str))
@@ -127,8 +129,34 @@ def run_pipeline(
     # or a CI job can act on it without parsing logs.
     results["gate"] = _gate_verdict(pipeline.models)
 
+    if promote:
+        _promote(registry, config, results["gate"])
+
     logger.info("Done. Outputs in %s", config.output_dir)
     return results
+
+
+def _promote(registry: ModelRegistry, config: PipelineConfig, gate: dict | None) -> None:
+    """
+    Promote the trained lag model, so the serving API picks it up.
+
+    Serving loads the *promoted* model rather than the newest, so without this
+    step a freshly trained model changes nothing in production - which is the
+    intended behaviour, not an oversight. `promote_model` refuses a model that
+    failed its gate, so this cannot put a forecaster worse than a free baseline
+    into production.
+    """
+    name = f"xgb_with_lag_{config.model_version}"
+    try:
+        registry.promote_model(name)
+    except (KeyError, ValueError) as exc:
+        logger.error("Not promoted: %s", exc)
+        return
+    logger.info(
+        "Promoted %s to production%s. The serving API will load it on next start.",
+        name,
+        f" (gate MASE {gate['mase']:.4f})" if gate and gate.get("mase") else "",
+    )
 
 
 def _gate_verdict(models: dict) -> dict | None:
@@ -204,6 +232,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Exit 0 even if the model loses to the seasonal-naive baseline "
              "(default: exit 3, so automation can refuse to promote it)",
     )
+    parser.add_argument(
+        "--promote", action="store_true",
+        help="Promote the trained lag model to production so the serving API "
+             "loads it. Refused if it failed its deploy gate.",
+    )
     return parser
 
 
@@ -264,7 +297,10 @@ def main() -> int:
 
     try:
         results = run_pipeline(
-            config=config, full_run=args.stages is None, stages=args.stages
+            config=config,
+            full_run=args.stages is None,
+            stages=args.stages,
+            promote=args.promote,
         )
         gate = results.get("gate")
         if gate and not gate["passed"] and not args.allow_failed_gate:

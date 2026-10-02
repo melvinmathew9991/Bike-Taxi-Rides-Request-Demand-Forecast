@@ -411,3 +411,11 @@ consequences, and under-served areas are structurally the most exposed.
   stops beating it, ship the baseline.
 - Every trained model is recorded in `output/model_registry.json` with its
   metrics, parameters, feature list and training row count.
+- **Promotion is what reaches production.** `ML_Pipeline.api` serves the model
+  marked `production` in the registry, never simply the newest. `promote_model`
+  refuses a model that failed its deploy gate *or* that carries no verdict, and
+  `rollback()` restores the previously promoted one. `run_pipeline.py --promote`
+  does it as part of a training run.
+- **The API caps the horizon at 96 intervals (two days)** and reports model age
+  against the four-week cadence, so the two conditions of use above are enforced
+  at the serving boundary rather than left to the caller.
