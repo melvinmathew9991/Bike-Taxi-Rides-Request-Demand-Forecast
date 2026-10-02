@@ -120,6 +120,19 @@ class TestPipelineConfig:
         )
         assert PipelineConfig.load_config(str(path)).n_clusters == 9
 
+    def test_default_lags_reach_the_weekly_season(self):
+        """
+        The model is judged against a seasonal-naive baseline - the value 336
+        intervals earlier. With lags stopping at 3 (90 minutes) it was being
+        asked to beat a signal it had never been given, and it did not: MASE
+        0.9992 on the chronological split. The daily and weekly lags are what
+        take it to 0.8086, so their presence is a property worth pinning.
+        """
+        lags = PipelineConfig().lag_features
+        assert 48 in lags, "missing the same-time-yesterday lag"
+        assert 336 in lags, "missing the same-time-last-week lag the baseline uses"
+        assert lags == tuple(sorted(lags)), "lags should be ordered"
+
     def test_snapshot_contains_every_field(self, tmp_path):
         config = PipelineConfig(output_dir=str(tmp_path), logs_dir=str(tmp_path))
         snapshot = config.to_dict()

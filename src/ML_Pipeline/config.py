@@ -63,7 +63,28 @@ class PipelineConfig:
     validation_fraction: float = 0.1
 
     # --- Features --------------------------------------------------------
-    lag_features: tuple[int, ...] = (1, 2, 3)
+    #: Lags in intervals. At 30 minutes: 1/2/3 are the last 90 minutes, 48 is
+    #: the same time yesterday, and 336 is the same time last week.
+    #:
+    #: The daily and weekly lags are not optional refinements. This model is
+    #: judged against a seasonal-naive baseline - the value 336 intervals
+    #: earlier - and with lags stopping at 90 minutes it was being asked to
+    #: beat a signal it had never been given. It did not: on the chronological
+    #: split it scored RMSE 4.8032 against the baseline's 4.6062, MASE 0.9992,
+    #: and `compare_to_baselines` logged "ship the baseline instead".
+    #:
+    #: Adding 48 and 336 takes that to RMSE 3.7505, MASE 0.8086. Measured
+    #: ablation also tried 24-hour and 7-day rolling means on top: they add
+    #: only 0.0116 MASE, which does not justify changing the persisted feature
+    #: contract (`rolling_window` is a scalar in the bundle), so they are left
+    #: out.
+    #:
+    #: Cost: `lag_336` makes the first week of each cluster unusable as
+    #: training data - 16,800 rows of 878,300 on the reference dataset - and
+    #: recursive serving now needs 7 days of contiguous history per cluster
+    #: rather than 90 minutes. See `prediction_pipeline`, which seeds from the
+    #: demand grid for exactly this reason.
+    lag_features: tuple[int, ...] = (1, 2, 3, 48, 336)
     rolling_window: int = 3
 
     # --- Model -----------------------------------------------------------

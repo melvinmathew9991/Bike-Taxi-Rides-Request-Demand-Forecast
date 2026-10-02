@@ -208,6 +208,10 @@ class MLPipeline:
             predict_with_lag_path=self.config.get_model_path("with_lag"),
             data_with_lag_path=self.config.get_data_path("with_lag"),
             data_without_lag_path=self.config.get_data_path("without_lag"),
+            # Seeds the recursive model's lags. The test file is typically one
+            # day; the lag set reaches a week back, so the depth has to come
+            # from the grid this run already produced.
+            history_path=self.prepared_data_path,
             horizon_steps=self.config.horizon_steps,
             interval_minutes=self.config.interval_minutes,
             freq=self.config.freq,

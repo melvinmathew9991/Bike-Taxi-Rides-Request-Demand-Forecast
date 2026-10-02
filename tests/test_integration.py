@@ -151,9 +151,17 @@ class TestConfigIsHonoured:
         assert "pickup_cluster" not in bundle.feature_names
 
     def test_lag_settings_are_recorded_on_the_bundle(self, workspace):
+        """
+        The bundle records the *configured* lags, not a hardcoded set.
+
+        This previously asserted `(1, 2, 3)` literally, which pinned the old
+        default rather than testing the mechanism, so it failed the moment the
+        configured lag set changed.
+        """
+        config = workspace["config"]
         bundle = workspace["results"]["models"]["with_lag"]
-        assert bundle.lags == (1, 2, 3)
-        assert bundle.rolling_window == 3
+        assert bundle.lags == tuple(config.lag_features)
+        assert bundle.rolling_window == config.rolling_window
 
 
 class TestServingContract:
@@ -173,11 +181,56 @@ class TestServingContract:
             predict_with_lag_path=config.get_model_path("with_lag"),
             data_without_lag_path=str(workspace["root"] / "rerun_nolag.csv"),
             data_with_lag_path=str(workspace["root"] / "rerun_lag.csv"),
+            history_path=config.get_data_path("prepared"),
             horizon_steps=24,
         )
         first = workspace["results"]["predictions"]["with_lag"]["request_count_pred"]
         again = out["with_lag"]["request_count_pred"]
         assert np.allclose(first.to_numpy(), again.to_numpy())
+
+    def test_history_grid_seeds_lags_the_test_file_cannot(self, workspace):
+        """
+        A weekly lag needs more history than a test file holds.
+
+        The test file spans 6 days (288 intervals) against the 336 a `lag_336`
+        model requires. Without `history_path` the forecaster must refuse
+        clearly rather than guess; with it, the demand grid supplies the depth.
+        """
+        config = workspace["config"]
+        bundle = ModelBundle.load_bundle(config.get_model_path("with_lag"))
+        if max(bundle.lags) <= 288:
+            pytest.skip("configured lags fit inside the test file; nothing to seed")
+
+        kwargs = dict(
+            cleaned_data_path=config.test_data_path,
+            cluster_model_path=config.get_model_path("clustering"),
+            predict_without_lag_path=config.get_model_path("without_lag"),
+            predict_with_lag_path=config.get_model_path("with_lag"),
+            data_without_lag_path=str(workspace["root"] / "seed_nolag.csv"),
+            data_with_lag_path=str(workspace["root"] / "seed_lag.csv"),
+            horizon_steps=24,
+        )
+        with pytest.raises(ValueError, match="this model needs"):
+            prediction_pipeline(**kwargs)
+
+        out = prediction_pipeline(history_path=config.get_data_path("prepared"), **kwargs)
+        assert len(out["with_lag"]) > 0
+        assert out["with_lag"]["request_count_pred"].notna().all()
+
+    def test_a_missing_history_grid_is_reported_not_ignored(self, workspace, tmp_path):
+        """A wrong history path must warn and fall back, not fail silently."""
+        config = workspace["config"]
+        with pytest.raises(ValueError, match="this model needs"):
+            prediction_pipeline(
+                cleaned_data_path=config.test_data_path,
+                cluster_model_path=config.get_model_path("clustering"),
+                predict_without_lag_path=config.get_model_path("without_lag"),
+                predict_with_lag_path=config.get_model_path("with_lag"),
+                data_without_lag_path=str(tmp_path / "a.csv"),
+                data_with_lag_path=str(tmp_path / "b.csv"),
+                history_path=str(tmp_path / "does_not_exist.csv"),
+                horizon_steps=24,
+            )
 
     def test_missing_columns_are_reported_clearly(self, workspace, tmp_path):
         config = workspace["config"]

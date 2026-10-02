@@ -24,6 +24,7 @@ from joblib import load
 
 from ML_Pipeline.features import (
     CLUSTER_COL,
+    TARGET_COL,
     TS_COL,
     ModelBundle,
     add_calendar_features,
@@ -48,6 +49,69 @@ def _read_bookings(path: str | Path) -> pd.DataFrame:
         return pd.read_csv(path, compression=None, low_memory=False)
 
 
+def _seed_history(
+    observed: pd.DataFrame, history_path: str | Path | None, freq: str
+) -> pd.DataFrame:
+    """
+    Build the panel that seeds the recursive forecaster's lags.
+
+    A lag-using model needs `max(lags)` intervals of history immediately before
+    the horizon. The test file alone cannot supply that once the model carries a
+    weekly lag: the reference test file covers a single day - 48 intervals -
+    against the 336 a `lag_336` model requires, so seeding from it raised
+    "History has only 48 intervals; this model needs 336" and the run failed at
+    this stage.
+
+    The demand grid the pipeline has just written is the right source. It is
+    already the `[ts, pickup_cluster, request_count]` panel this function wants,
+    it spans the whole training period, and it ends at the interval the horizon
+    starts from. Where the two overlap the test file wins, because it is the
+    more recent observation of the same intervals.
+
+    Args:
+        observed: Panel built from the test bookings.
+        history_path: Demand grid to seed from. When None, only `observed` is
+            used - which is correct for a model whose lags fit inside it.
+        freq: Grid frequency, for the contiguity report.
+
+    Returns:
+        Panel sorted by cluster then timestamp, one row per (ts, cluster).
+    """
+    if history_path is None or not Path(history_path).exists():
+        if history_path is not None:
+            logger.warning(
+                "History grid not found at %s; seeding lags from the test file "
+                "alone. A model with lags longer than that file will fail.",
+                history_path,
+            )
+        return observed
+
+    grid = _read_bookings(history_path)
+    missing = sorted({TS_COL, CLUSTER_COL, TARGET_COL}.difference(grid.columns))
+    if missing:
+        raise KeyError(
+            f"History grid {history_path} is missing column(s): {missing}. "
+            f"Expected the aggregated demand grid, found: {list(grid.columns)}"
+        )
+    grid[TS_COL] = pd.to_datetime(grid[TS_COL])
+
+    panel_cols = [TS_COL, CLUSTER_COL, TARGET_COL]
+    combined = (
+        pd.concat([grid[panel_cols], observed[panel_cols]], ignore_index=True)
+        .drop_duplicates(subset=[TS_COL, CLUSTER_COL], keep="last")
+        .sort_values([CLUSTER_COL, TS_COL])
+        .reset_index(drop=True)
+    )
+    logger.info(
+        "Lag history: %s intervals from the grid + %s from the test file "
+        "= %s intervals, %s to %s",
+        f"{grid[TS_COL].nunique():,}", f"{observed[TS_COL].nunique():,}",
+        f"{combined[TS_COL].nunique():,}",
+        combined[TS_COL].min(), combined[TS_COL].max(),
+    )
+    return combined
+
+
 def _cluster_centroids(cluster_model: Any) -> np.ndarray | None:
     centers = getattr(cluster_model, "cluster_centers_", None)
     return None if centers is None else np.asarray(centers)
@@ -61,6 +125,7 @@ def prediction_pipeline(
     data_without_lag_path: str,
     data_with_lag_path: str,
     *,
+    history_path: str | Path | None = None,
     horizon_steps: int | None = None,
     horizon_start: str | pd.Timestamp | None = None,
     interval_minutes: int = DEFAULT_INTERVAL_MINUTES,
@@ -76,6 +141,10 @@ def prediction_pipeline(
         predict_with_lag_path: Lag-using model bundle (joblib).
         data_without_lag_path: Where to write direct forecasts.
         data_with_lag_path: Where to write recursive forecasts.
+        history_path: Aggregated demand grid used to seed the recursive model's
+            lags. Required whenever the model's longest lag exceeds the span of
+            `cleaned_data_path` - which it does by default, since `lag_336`
+            needs 7 days and a test file is typically one.
         horizon_steps: Intervals to forecast. Defaults to one day's worth.
         horizon_start: First forecast interval. Defaults to the interval right
             after the last observed booking, i.e. forecasting genuinely forward.
@@ -151,10 +220,14 @@ def prediction_pipeline(
     )
     _write(direct, data_without_lag_path)
 
+    # The recursive model reads its lags from history, so it needs depth the
+    # test file does not have once the lag set reaches a week back.
+    history = _seed_history(panel, history_path, freq)
+
     use_centroids_lag = centroids is not None and "cluster_lat" in with_lag.feature_names
     recursive = forecast_recursive(
         with_lag,
-        panel,
+        history,
         horizon,
         clusters=labels,
         centroids=centroids if use_centroids_lag else None,
