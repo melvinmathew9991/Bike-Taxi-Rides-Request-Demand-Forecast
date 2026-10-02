@@ -42,9 +42,9 @@ The pipeline has a hard boundary at the aggregation step:
 ```
 raw_data.csv            booking-level    PERSONAL DATA
   -> data_prep_basic         booking-level    PERSONAL DATA
-  -> data_prep_advanced      booking-level    PERSONAL DATA  -> clean_data.csv
+  -> data_prep_advanced      booking-level    PERSONAL DATA  -> clean_data.csv.gz
   -> data_prep_geospatial    AGGREGATED       ---- boundary ----
-  -> Data_Prepared.csv       counts per cluster per 30 min    NOT personal data
+  -> Data_Prepared.csv.gz    counts per cluster per 30 min    NOT personal data
   -> model training          aggregated only
   -> forecasts               aggregated only
 ```
@@ -66,7 +66,7 @@ they cannot memorise an individual's movements.
   Scope, stated precisely: this removes the identifier that makes the coordinate
   trace attributable to a person — repeated pickups at one pin no longer link to
   a rider. It does **not** remove the coordinates themselves, which persist in
-  `clean_data_<version>.csv` until the aggregation below removes them. That file
+  `clean_data_<version>.csv.gz` until the aggregation below removes them. That file
   remains personal data under § 1 and must be handled accordingly.
 
   This option existed from the start and was never passed, so until it was
@@ -87,10 +87,10 @@ they cannot memorise an individual's movements.
 `*.gz`, `*.joblib`. Verify with `git status` before every commit. If personal
 data is ever committed, rewriting history is not optional.
 
-**Minimise what is persisted.** Only `clean_data.csv` needs booking-level
+**Minimise what is persisted.** Only `clean_data.csv.gz` needs booking-level
 detail, and only as an intermediate. Prefer `drop_rider_id=True` unless the
 rider identifier is genuinely required, and delete the intermediate once
-`Data_Prepared.csv` exists.
+`Data_Prepared.csv.gz` exists.
 
 **Restrict access.** Booking-level files should be readable only by those
 running the pipeline. The aggregated grid can be shared freely — that is the
