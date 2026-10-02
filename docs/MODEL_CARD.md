@@ -7,9 +7,9 @@ cluster per 30-minute interval.
 
 | | Without lag | With lag |
 |---|---|---|
-| Features | cluster centroid (lat/lng), minute, hour, month, quarter, day-of-week | the above + `lag_1`, `lag_2`, `lag_3`, `rolling_mean` |
+| Features | cluster centroid (lat/lng), minute, hour, month, quarter, day-of-week | the above + `lag_1`, `lag_2`, `lag_3`, `lag_48` (yesterday), `lag_336` (last week), `rolling_mean` |
 | Applied | directly, any horizon | recursively, one step at a time |
-| Needs recent history | No | Yes — at least `max(lag)` intervals |
+| Needs recent history | No | Yes — **7 days**, contiguous, per cluster (`max(lag)` = 336 intervals) |
 | Use when | forecasting far ahead, or history is unavailable | forecasting the next few intervals |
 
 Algorithm: XGBoost, `objective="count:poisson"`, tree count chosen by early
@@ -113,34 +113,67 @@ warning when the model loses.
 
 ### Single-split performance — a worst case, not the verdict
 
-Chronological split: train 2020-03-26 → 2021-01-12 (702,650 rows), test
-2021-01-12 → 2021-03-26 (175,650 rows). Test-period mean demand 9.04.
+Measured from the run of 2026-10-02 (`model_version 20261002_194913`), the
+first with daily and weekly lags. Chronological split: train 2020-04-02 →
+2021-01-14 (689,200 rows), test 2021-01-14 → 2021-03-26 (172,300 rows).
+Test-period mean demand 9.08 against the training period's 3.06.
+
+Training starts a week later than the grid does, and both row counts are lower
+than before this lag set landed: `lag_336` makes the first 336 intervals of each
+cluster unusable, which costs 13,300 rows of 878,300.
 
 **Read this section as a staleness stress test.** The test window runs up to ten
 weeks past the training cut, so late test rows are scored against a badly stale
 model. It is a useful bound on how bad things get if retraining stops; it is not
-representative of a model retrained on a normal cadence. The rolling-origin
-results two sections down are the ones to judge the model by.
+representative of a model retrained on a normal cadence.
 
 **One step ahead** (model is given true observed lags):
 
 | approach | RMSE | MAE | MASE | verdict |
 |---|---|---|---|---|
-| seasonal naive (same time last week) | **4.543** | 2.866 | 1.000 | — |
-| model **with lag** | 4.803 | **2.828** | **0.987** | ties naive |
-| model **without lag** | 8.558 | 4.766 | 1.663 | loses badly |
-| cluster historical mean | 9.481 | 6.571 | 2.293 | loses badly |
+| model **with lag** | **3.751** | **2.322** | **0.809** | beats naive by 19% |
+| seasonal naive (same time last week) | 4.618 | 2.920 | 1.000 | — |
+| model **without lag** | 8.628 | 4.820 | 1.752 | loses badly |
+| cluster historical mean | 9.498 | 6.578 | 2.282 | loses badly |
 
 **24 hours ahead** (recursive; the model consumes its own predictions):
 
 | | value |
 |---|---|
-| RMSE | 8.261 |
-| MAE | 5.144 |
+| RMSE | 3.242 |
+| MAE | 2.023 |
 | mean actual | 6.37 |
-| mean predicted | **1.35** |
+| mean predicted | 5.75 |
+| level ratio | **0.90** |
+
+> **What the seasonal lags changed.** Before them the lag set stopped at 90
+> minutes, and the model was being asked to beat a baseline built from the value
+> 336 intervals earlier — a signal it had never been given. It did not:
+>
+> | | before | after |
+> |---|---|---|
+> | one-step RMSE | 4.803 | **3.751** |
+> | one-step MASE | 0.999 — fails the gate | **0.809** — clears it |
+> | recursive 24h RMSE | 8.261 | **3.242** |
+> | recursive level ratio | 0.21 (predicted 1.35 vs actual 6.37) | **0.90** |
+>
+> The level ratio is the one to note. A recursive forecast anchored to its
+> training-era level used to under-forecast demand roughly five-fold over a day.
+> With a weekly lag carrying the current level into every step, it tracks.
 
 ### Rolling-origin validation
+
+> **Measured before the daily and weekly lags landed.** Everything in this
+> section and in *Model staleness* below was produced by
+> `scripts/compare_strategies.py` against the previous lag set `(1, 2, 3)`. The
+> absolute numbers therefore no longer describe the shipped model, and the
+> single-split result above suggests they understate it substantially.
+>
+> They are kept because the *relative* comparison between strategies is still
+> the best evidence available, and because re-running the sweep is a job in its
+> own right — four strategies at five origins in two modes. **Re-run it before
+> relying on any figure below.** Until then, treat the retraining cadence in
+> *Deployment verdict* as the conservative reading it is.
 
 A single split on a series this non-stationary measures the fortnight you held
 out as much as the model. `ML_Pipeline.validation` evaluates a strategy at five
@@ -186,22 +219,35 @@ left behind.
 
 ### Deployment verdict
 
-**Usable, conditionally.** Retrained on at least a four-week cadence, the model
-beats a seasonal-naive baseline at every origin tested, one step ahead (MASE
-0.79) and over a 24-hour recursive horizon (MASE 0.95, 3/5 folds). Switching to
-the ratio target improves both, and materially fixes level tracking in the
-recursive mode (level ratio 0.99 vs 0.80, 5/5 folds vs 3/5).
+**Usable.** The model clears its own deploy gate on the single chronological
+split — MASE 0.809 one step ahead, beating seasonal-naive by 19% — and holds the
+right demand level across a 24-hour recursive horizon (level ratio 0.90). It
+does this on the staleness stress test, which is the harshest configuration
+measured here, so a model retrained on a normal cadence should do better.
+
+Before the seasonal lags it did **not** clear the gate: MASE 0.999 with
+`compare_to_baselines` logging "ship the baseline instead until it does".
 
 Conditions for use:
 
-1. **Retrain at least every four weeks.** This is not a nice-to-have; past week
-   five the model is worse than a baseline that costs nothing to run.
+1. **Retrain at least every four weeks.** Carried over unchanged, and
+   deliberately conservative: the staleness measurement behind it predates the
+   current lag set, and a weekly lag should slow decay by carrying the current
+   level into the model's inputs. That has not been re-measured, so the old
+   cadence stands until it has been.
 2. **Monitor `level_ratio` in production.** It degrades earliest and most
-   visibly, well before RMSE does.
-3. **Prefer the ratio target for recursive serving.** The level target
-   under-forecasts by ~20% over 24 hours and loses to naive in 2 of 5 folds.
+   visibly, well before RMSE does. Nothing in the repository computes it on a
+   schedule yet.
+3. **Supply 7 days of contiguous history per cluster.** The weekly lag makes
+   this a hard precondition of recursive serving, not a preference — the
+   forecaster refuses rather than guesses if it is missing. Note that gaps are
+   filled with zero and a warning, which matters more over a week than it did
+   over 90 minutes.
 4. **Do not use the without-lag model for anything but cold starts.** It has no
-   channel carrying current demand level and loses to naive by 66%.
+   channel carrying current demand level and loses to naive by 75%.
+5. **Run the baseline comparison at every retrain.** It is not yet wired into
+   the pipeline, so it has to be run deliberately. If the model stops beating
+   seasonal-naive, ship the baseline.
 
 > An earlier revision of this card concluded "NOT READY / not deployable", based
 > on a single split whose test window ran up to ten weeks past the training cut.
@@ -212,13 +258,20 @@ Conditions for use:
 ### What the ratio target does
 
 Predicting `request_count / (rolling_mean + 1)` and multiplying back removes the
-trend from the target, so the trees never have to extrapolate. Its gain is
-modest one step ahead (MASE 0.763 vs 0.791) but clear in the recursive mode that
-the pipeline actually serves, and it is the only variant that holds the right
-demand level across a 24-hour horizon.
+trend from the target, so the trees never have to extrapolate. Its gain was
+modest one step ahead (MASE 0.763 vs 0.791) but clear in the recursive mode the
+pipeline actually serves.
 
 It is **not yet implemented**: it redefines the target, which is a modelling
 decision rather than a bug fix.
+
+> It was previously described here as "the only variant that holds the right
+> demand level across a 24-hour horizon". That is no longer true as stated: the
+> weekly lag now holds the level too (ratio 0.90 against the old 0.21), and it
+> does so without redefining the target. The ratio target may still add
+> something on top — both attack the same root cause, that trees cannot
+> extrapolate a trend — but the case for it has to be re-made against the
+> current lag set rather than the old one.
 
 
 ### Historical performance (pre-refactor, for reference)
@@ -251,22 +304,29 @@ as a record of the original work.
 
 ## Known limitations
 
-1. **Explains less than half the variance.** Substantial demand variation is
-   driven by factors absent from the features: weather, events, holidays,
-   pricing, competitor supply, rider availability.
+1. **Variance explained is now 0.88 (one step), not under half.** The earlier
+   figure of R² 0.39 was the without-lag model; the lag model reached 0.81 and,
+   with the seasonal lags, 0.88. Substantial variation remains driven by factors
+   absent from the features: weather, events, holidays, pricing, competitor
+   supply, rider availability.
 2. **No exogenous features.** Weather and a holiday calendar are the obvious
-   first additions and are likely worth more than any further tuning.
-3. **Trained through the COVID-19 period.** Demand patterns in 2020-21 are not a
+   first additions and are likely worth more than any further tuning. For a
+   two-wheeler service in a monsoon city, rainfall is plausibly the largest
+   single driver of demand variance still unrepresented.
+3. **Recursive serving needs 7 days of contiguous history per cluster.** A
+   consequence of the weekly lag. Gaps are filled with zero and a warning, which
+   is more consequential over a week than over the 90 minutes it used to be.
+4. **Trained through the COVID-19 period.** Demand patterns in 2020-21 are not a
    reliable guide to normal operation. Retrain before relying on it.
-4. **Recursive error compounding.** The lag model's accuracy degrades with each
+5. **Recursive error compounding.** The lag model's accuracy degrades with each
    step. Check `recursive_rmse` against `test_rmse` in the model bundle; the gap
    is the real cost.
-5. **Fulfilled requests, not latent demand.** The target counts logged booking
+6. **Fulfilled requests, not latent demand.** The target counts logged booking
    requests. Demand that never materialised because no rider was nearby is
    invisible — see the feedback-loop discussion in `DATA_GOVERNANCE.md`.
-6. **Cluster geometry is fixed at training time.** The city changes; the cluster
+7. **Cluster geometry is fixed at training time.** The city changes; the cluster
    model does not, until refitted.
-7. **Aggressive cleaning.** The business rules remove rebookings and retries on
+8. **Aggressive cleaning.** The business rules remove rebookings and retries on
    the assumption they are duplicates of one intention. If a rider genuinely
    requests two rides nine minutes apart, that is counted once.
 
