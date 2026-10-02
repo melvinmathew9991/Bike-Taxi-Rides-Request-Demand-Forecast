@@ -169,6 +169,14 @@ two, 0.89 at four, 0.99 at one week, 1.06 at two**. So keep `--horizon-steps` at
 or below ~96; beyond a week the model only ties a baseline that costs nothing.
 See [docs/MODEL_CARD.md](docs/MODEL_CARD.md) for the table.
 
+Across five rolling origins on the current lag set, every strategy tried beats
+seasonal-naive in **5 of 5 folds**, one step ahead and over a 24-hour recursive
+horizon. The spread between them (0.006 MASE) is now five times smaller than the
+fold-to-fold variation (0.029), so the ratio-target variant this project used to
+recommend is no longer distinguishable from what ships —
+[docs/MODEL_CARD.md](docs/MODEL_CARD.md) explains why the weekly lag removed the
+problem it solved.
+
 Three properties of the target drive the design:
 
 - **It is an over-dispersed count** (mean 4.22, variance ~46, 37% zeros). The objective is
@@ -193,9 +201,8 @@ last week" should not ship.
 > Demand grew 5.2x across the training year and trees cannot extrapolate, so
 > staleness remains the binding constraint. **Retrain at least every four
 > weeks**, and monitor the predicted-to-actual level ratio — it degrades
-> earliest. That cadence is deliberately conservative: it was measured under the
-> previous lag set, and has not yet been re-measured with the weekly lag that
-> should slow the decay.
+> earliest. That cadence is deliberately conservative: the staleness curve behind
+> it still predates the weekly lag, which should slow the decay.
 >
 > The gate runs at the end of every training pass, records its verdict in the
 > model registry, and `run_pipeline.py` exits **3** when the model loses, so

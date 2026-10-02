@@ -218,46 +218,88 @@ happily accept one.
 
 ### Rolling-origin validation
 
-> **Measured before the daily and weekly lags landed.** Everything in this
-> section and in *Model staleness* below was produced by
-> `scripts/compare_strategies.py` against the previous lag set `(1, 2, 3)`. The
-> absolute numbers therefore no longer describe the shipped model, and the
-> single-split result above suggests they understate it substantially.
->
-> They are kept because the *relative* comparison between strategies is still
-> the best evidence available, and because re-running the sweep is a job in its
-> own right — four strategies at five origins in two modes. **Re-run it before
-> relying on any figure below.** Until then, treat the retraining cadence in
-> *Deployment verdict* as the conservative reading it is.
-
-A single split on a series this non-stationary measures the fortnight you held
-out as much as the model. `ML_Pipeline.validation` evaluates a strategy at five
-successive origins, always training on the past. Test window one week
-(one-step) or 24 hours (recursive); `MASE < 1` beats seasonal-naive.
+Re-run on 2026-10-02 against the current lag set `(1, 2, 3, 48, 336)`. A single
+split on a series this non-stationary measures the fortnight you held out as much
+as the model, so `ML_Pipeline.validation` evaluates a *strategy* at five
+successive origins, always training on the past. Test window one week (one-step)
+or 24 hours (recursive); `MASE < 1` beats seasonal-naive.
 
 **One step ahead** (true observed lags), 5 folds:
 
-| strategy | RMSE | MASE | worst fold | folds beating naive |
-|---|---|---|---|---|
-| ratio target, last 8 weeks | 2.902 | **0.763** | 0.788 | 5/5 |
-| ratio target, full history | 2.928 | 0.767 | 0.796 | 5/5 |
-| level target, last 8 weeks | 2.983 | 0.784 | 0.810 | 5/5 |
-| level target, full history (current) | 3.030 | 0.791 | 0.820 | 5/5 |
+| strategy | RMSE | MASE | std | worst fold | beats naive |
+|---|---|---|---|---|---|
+| ratio target, full history | 3.006 | **0.761** | 0.031 | 0.791 | 5/5 |
+| ratio target, last 8 weeks | 3.009 | 0.761 | 0.032 | 0.794 | 5/5 |
+| level target, full history (current) | 3.063 | 0.771 | 0.025 | 0.795 | 5/5 |
+| level target, last 8 weeks | 3.066 | 0.773 | 0.026 | 0.799 | 5/5 |
 
 **Recursive, 24-hour horizon** (model consumes its own predictions):
 
-| strategy | RMSE | MASE | folds beating naive | level ratio |
-|---|---|---|---|---|
-| ratio target, last 8 weeks | 2.725 | **0.831** | 5/5 | **0.99** |
-| ratio target, full history | 2.851 | 0.841 | 5/5 | 0.92 |
-| level target, last 8 weeks | 3.105 | 0.902 | 4/5 | 0.90 |
-| level target, full history (current) | 3.400 | 0.947 | 3/5 | 0.80 |
+| strategy | RMSE | MASE | std | beats naive | level ratio |
+|---|---|---|---|---|---|
+| ratio target, full history | 2.734 | **0.789** | 0.034 | 5/5 | 0.99 |
+| level target, full history (current) | 2.767 | 0.791 | 0.022 | 5/5 | 0.94 |
+| ratio target, last 8 weeks | 2.725 | 0.792 | 0.034 | 5/5 | 0.99 |
+| level target, last 8 weeks | 2.763 | 0.795 | 0.024 | 5/5 | 0.95 |
 
-`level ratio` is mean predicted over mean actual. A recursive forecast that
-decays toward the training-era level shows up here well before RMSE makes it
-obvious.
+`level ratio` is mean predicted over mean actual. A recursive forecast decaying
+toward the training-era level shows up there well before RMSE makes it obvious.
+
+#### The four strategies are now indistinguishable
+
+| | before, lags (1,2,3) | after, lags (1,2,3,48,336) |
+|---|---|---|
+| spread across strategies, recursive MASE | 0.117 | **0.006** |
+| fold-to-fold standard deviation | — | 0.029 |
+
+**The spread between strategies is now five times smaller than the variation
+between folds.** Choosing between them on this evidence would be choosing noise.
+Before the seasonal lags the spread was four times the noise, and the ranking
+meant something.
+
+What changed, per strategy, in recursive mode:
+
+| strategy | MASE before | after | change | beats naive |
+|---|---|---|---|---|
+| level, full history (shipped) | 0.947 | **0.791** | −0.157 | 3/5 → **5/5** |
+| level, last 8 weeks | 0.902 | 0.795 | −0.107 | 4/5 → 5/5 |
+| ratio, full history | 0.841 | 0.789 | −0.052 | 5/5 |
+| ratio, last 8 weeks | 0.831 | 0.792 | −0.039 | 5/5 |
+
+Two conclusions, and both correct a previous recommendation in this card.
+
+**The ratio target no longer earns its place.** Its advantage in recursive mode
+was 0.9470 − 0.8405 = **0.107** before; it is now 0.7905 − 0.7889 = **0.002**,
+which is noise. That follows directly from *why* it worked: it removed the trend
+from the target so the trees never had to extrapolate, and `lag_336` now carries
+the current demand level into every step instead. There is nothing left for it to
+fix, and it costs a redefined target and a wrapper at serving time. The level
+target's level ratio rose from 0.80 to 0.94 without it.
+
+**Restricting training to recent weeks has stopped helping, and now slightly
+hurts.** "Last 8 weeks" improved the level target by 0.045 before (0.947 → 0.902);
+it now costs 0.004 (0.791 → 0.795). Same reason: recency used to have to come from
+the training window, and the weekly lag supplies it, so throwing away older data
+only discards information. Both differences are inside the noise band, so the
+honest statement is that it no longer helps — not that full history is now
+provably better.
+
+> The previous revision of this card recommended the ratio target, and reported
+> the level target losing to naive in 2 of 5 folds. Both are superseded: every
+> strategy now beats naive 5/5, and the ratio target's gain has gone. The
+> recommendation was sound on the evidence available at the time; the lag change
+> removed the problem it solved.
 
 ### Model staleness: the binding operational constraint
+
+> **This is the one measurement here still predating the current lag set.** The
+> rolling-origin sweep above was re-run on 2026-10-02; this curve was not — it is
+> a separate experiment with no script in the repository. A weekly lag carries the
+> current demand level into the model's inputs, which should slow decay
+> substantially, so the figures below are very likely pessimistic. They are kept
+> because being pessimistic about staleness is the safe direction, and the
+> four-week cadence they justify is the project's most operationally important
+> number. **Re-measure before relaxing that cadence.**
 
 A model frozen at 2020-12-01 and scored on successive weeks with no retraining:
 
@@ -285,11 +327,12 @@ Before the seasonal lags it did **not** clear the gate: MASE 0.999 with
 
 Conditions for use:
 
-1. **Retrain at least every four weeks.** Carried over unchanged, and
-   deliberately conservative: the staleness measurement behind it predates the
-   current lag set, and a weekly lag should slow decay by carrying the current
-   level into the model's inputs. That has not been re-measured, so the old
-   cadence stands until it has been.
+1. **Retrain at least every four weeks.** Carried over unchanged and still
+   deliberately conservative. The rolling-origin sweep has now been re-run on the
+   current lag set, but the staleness curve this cadence rests on has not — it is
+   a separate experiment, and a weekly lag should slow decay. Erring short costs
+   compute; erring long serves forecasts worse than a free baseline, so the old
+   cadence stands until someone measures the new one.
 2. **Monitor `level_ratio` in production.** It degrades earliest and most
    visibly, well before RMSE does. Nothing in the repository computes it on a
    schedule yet.
@@ -317,20 +360,23 @@ Conditions for use:
 ### What the ratio target does
 
 Predicting `request_count / (rolling_mean + 1)` and multiplying back removes the
-trend from the target, so the trees never have to extrapolate. Its gain was
-modest one step ahead (MASE 0.763 vs 0.791) but clear in the recursive mode the
-pipeline actually serves.
+trend from the target, so the trees never have to extrapolate. On the previous lag
+set that was worth 0.107 MASE in recursive mode and it was the recommended next
+change.
 
-It is **not yet implemented**: it redefines the target, which is a modelling
-decision rather than a bug fix.
+**It is not implemented, and on current evidence it should not be.** The sweep was
+re-run against lags `(1, 2, 3, 48, 336)` on 2026-10-02 and its advantage is now
+0.002 MASE — noise, against a fold-to-fold standard deviation of 0.029.
 
-> It was previously described here as "the only variant that holds the right
-> demand level across a 24-hour horizon". That is no longer true as stated: the
-> weekly lag now holds the level too (ratio 0.90 against the old 0.21), and it
-> does so without redefining the target. The ratio target may still add
-> something on top — both attack the same root cause, that trees cannot
-> extrapolate a trend — but the case for it has to be re-made against the
-> current lag set rather than the old one.
+The reason is that both changes attack the same root cause. Trees cannot
+extrapolate a trend; the ratio target removed the trend from the target, and
+`lag_336` instead hands the model the current level directly as a feature. Having
+done the second, there is nothing left for the first to fix. The level target's
+recursive level ratio is 0.94 without it, against 0.80 before.
+
+Worth keeping in mind rather than discarding: if the lag set ever loses its weekly
+component — a coarser interval, a shorter history requirement — the ratio target
+becomes relevant again, because the problem it solves would come back.
 
 
 ### Historical performance (pre-refactor, for reference)

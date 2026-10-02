@@ -32,6 +32,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 import xgboost as xgb  # noqa: E402
 from joblib import load  # noqa: E402
 
+from ML_Pipeline.config import PipelineConfig  # noqa: E402
 from ML_Pipeline.features import (  # noqa: E402
     TARGET_COL,
     TS_COL,
@@ -50,9 +51,15 @@ from ML_Pipeline.validation import (  # noqa: E402
 
 logger = logging.getLogger("compare_strategies")
 
-LAGS = (1, 2, 3)
-ROLLING_WINDOW = 3
-FEATURES = build_feature_names(
+#: Lags and rolling window come from PipelineConfig rather than being hardcoded.
+#: They were `(1, 2, 3)` here, which is why the sweep's published numbers went
+#: stale the moment the configured lag set gained the daily and weekly lags: the
+#: script kept measuring a feature set the pipeline no longer trains. Overridable
+#: with --lags so an older result can be reproduced deliberately.
+_CONFIG = PipelineConfig()
+LAGS: tuple[int, ...] = tuple(_CONFIG.lag_features)
+ROLLING_WINDOW = _CONFIG.rolling_window
+FEATURES: list[str] = build_feature_names(
     use_lags=True, lags=LAGS, cluster_features=("cluster_lat", "cluster_lng")
 )
 BASE_PARAMS = dict(
@@ -142,9 +149,25 @@ def main() -> int:
     parser.add_argument("--test-size", type=int, default=336, help="one-step window")
     parser.add_argument("--horizon", type=int, default=48, help="recursive horizon")
     parser.add_argument("--out", default="output/strategy_comparison.csv")
+    parser.add_argument(
+        "--lags", default=None,
+        help="Comma-separated lags, e.g. '1,2,3'. Defaults to PipelineConfig's "
+             "configured set, so the sweep measures what the pipeline trains.",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
+
+    global LAGS, FEATURES
+    if args.lags:
+        LAGS = tuple(int(x) for x in args.lags.split(","))
+        FEATURES = build_feature_names(
+            use_lags=True, lags=LAGS, cluster_features=("cluster_lat", "cluster_lng")
+        )
+    logger.info(
+        "Lags %s, rolling window %d, %d features: %s",
+        LAGS, ROLLING_WINDOW, len(FEATURES), FEATURES,
+    )
 
     df = read_csv_any(args.data)
     df[TS_COL] = pd.to_datetime(df[TS_COL])
