@@ -6,6 +6,10 @@ Every flag here reaches the code it names. `--n-clusters` in particular used to
 be parsed, logged, written into the saved config snapshot, and then discarded
 while the clustering stage hardcoded 50 - and the troubleshooting guide told
 users to lower it to fix out-of-memory errors.
+
+`--config` and the flags compose: the snapshot sets the starting point and any
+flag the user passed overrides it. They used to be mutually exclusive branches,
+so naming `--config` silently discarded every other flag on the command line.
 """
 
 from __future__ import annotations
@@ -132,16 +136,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--stages", nargs="+", choices=["data", "features", "model", "predict"],
         help="Run only these stages",
     )
-    parser.add_argument("--raw-data", default="data/raw_data.csv")
+    # Every config-bearing flag defaults to None rather than repeating
+    # PipelineConfig's default. That keeps the defaults in one place, and makes
+    # "the user passed this" distinguishable from "nobody passed it" - which is
+    # what lets a flag override a value loaded from --config.
+    parser.add_argument("--raw-data", default=None)
+    parser.add_argument("--test-data", default=None)
+    parser.add_argument("--output", default=None)
     parser.add_argument(
-        "--test-data", default="data/test_dataset/cleaned_test_booking_data.csv"
+        "--n-clusters", type=int, default=None,
+        help="Number of geographic clusters",
     )
-    parser.add_argument("--output", default="output")
     parser.add_argument(
-        "--n-clusters", type=int, default=50, help="Number of geographic clusters"
-    )
-    parser.add_argument(
-        "--test-fraction", type=float, default=0.2,
+        "--test-fraction", type=float, default=None,
         help="Chronological share of the timeline held out for testing",
     )
     parser.add_argument(
@@ -149,37 +156,72 @@ def build_parser() -> argparse.ArgumentParser:
         help="Intervals to forecast (default: one day)",
     )
     parser.add_argument(
-        "--no-centroids", action="store_true",
+        "--no-centroids", action="store_true", default=None,
         help="Use the raw cluster label instead of centroid coordinates",
     )
     parser.add_argument(
-        "--cluster-diagnostics", action="store_true",
+        "--cluster-diagnostics", action="store_true", default=None,
         help="Run the (expensive) cluster-count sweep before fitting",
     )
     parser.add_argument("--log-file", default=None)
-    parser.add_argument("--log-level", default="INFO")
+    parser.add_argument("--log-level", default=None)
     return parser
 
 
-def main() -> int:
-    args = build_parser().parse_args()
-    setup_logging(args.log_file, args.log_level)
+def config_from_args(args: argparse.Namespace) -> PipelineConfig:
+    """
+    Build the run configuration from `--config` and the flags, in that order.
 
+    `--config` supplies the starting point; any flag the user actually passed
+    then overrides it. Previously this was an if/else - naming `--config` sent
+    every other flag down a branch that never ran, so
+    `--config run.json --n-clusters 100` silently clustered at whatever the
+    snapshot said. Flags are the more specific instruction and win.
+    """
     if args.config:
         logger.info("Loading configuration from %s", args.config)
         config = PipelineConfig.load_config(args.config)
     else:
-        config = PipelineConfig(
-            raw_data_path=args.raw_data,
-            test_data_path=args.test_data,
-            output_dir=args.output,
-            n_clusters=args.n_clusters,
-            test_fraction=args.test_fraction,
-            horizon_steps=args.horizon_steps,
-            use_cluster_centroids=not args.no_centroids,
-            run_cluster_diagnostics=args.cluster_diagnostics,
-            log_level=args.log_level,
+        config = PipelineConfig()
+
+    overrides = {
+        "raw_data_path": args.raw_data,
+        "test_data_path": args.test_data,
+        "output_dir": args.output,
+        "n_clusters": args.n_clusters,
+        "test_fraction": args.test_fraction,
+        "horizon_steps": args.horizon_steps,
+        # store_true flags: absent is None (no opinion), present is True.
+        "use_cluster_centroids": False if args.no_centroids else None,
+        "run_cluster_diagnostics": True if args.cluster_diagnostics else None,
+        "log_level": args.log_level,
+    }
+    applied = {k: v for k, v in overrides.items() if v is not None}
+    for name, value in applied.items():
+        setattr(config, name, value)
+
+    if applied and args.config:
+        logger.info(
+            "Flags overriding %s: %s",
+            args.config,
+            ", ".join(f"{k}={v!r}" for k, v in sorted(applied.items())),
         )
+
+    # `__post_init__` already validated what was loaded or defaulted; the
+    # overrides above bypass it, so re-check rather than trust them.
+    config.validate()
+    return config
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    setup_logging(args.log_file, args.log_level or "INFO")
+
+    try:
+        config = config_from_args(args)
+    except ValueError as exc:
+        logger.error("%s", exc)
+        return 2
 
     try:
         run_pipeline(config=config, full_run=args.stages is None, stages=args.stages)

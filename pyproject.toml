@@ -20,7 +20,9 @@ where = ["src"]
 # old root-level test_pipeline.py -- a script that ran a full training job at
 # collection time and called sys.exit().
 testpaths = ["tests"]
-pythonpath = ["src"]
+# "." puts the root-level run_pipeline.py on the path so its CLI wiring is
+# testable; collection still stays inside tests/ via testpaths above.
+pythonpath = ["src", "."]
 addopts = "-q --strict-markers"
 markers = [
     "slow: exercises model fitting; deselect with -m 'not slow'",

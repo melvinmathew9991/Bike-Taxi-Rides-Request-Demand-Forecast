@@ -26,12 +26,15 @@ from ML_Pipeline.pipeline import MLPipeline  # noqa: E402
 
 
 def main() -> int:
+    # Defaults come from PipelineConfig rather than being repeated here. The
+    # copy that used to live in this file drifted: it pointed at
+    # data/test_dataset/cleaned_test_booking_data.csv, a directory that does
+    # not exist, so the forecasting stage warned and skipped on every run.
+    defaults = PipelineConfig()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--raw-data", default="data/raw_data.csv")
-    parser.add_argument(
-        "--test-data", default="data/test_dataset/cleaned_test_booking_data.csv"
-    )
-    parser.add_argument("--output", default="output")
+    parser.add_argument("--raw-data", default=defaults.raw_data_path)
+    parser.add_argument("--test-data", default=defaults.test_data_path)
+    parser.add_argument("--output", default=defaults.output_dir)
     args = parser.parse_args()
 
     logging.basicConfig(

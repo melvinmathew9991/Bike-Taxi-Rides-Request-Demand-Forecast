@@ -19,7 +19,7 @@ Gzip-compressed CSV, booking-level, one row per ride request.
 
 Reference dataset: 8,381,556 rows, 2020-03-26 to 2021-03-26, Bangalore.
 
-## Input: `data/test_dataset/cleaned_test_booking_data.csv`
+## Input: `data/cleaned_test_booking_data.csv`
 
 Same schema. The serving window. `number` is not required for forecasting, only
 `ts`, `pick_lat`, `pick_lng`.
