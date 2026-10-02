@@ -16,7 +16,7 @@ raw bookings
 
 ```bash
 pip install -r requirements-dev.txt        # or requirements.txt to run, not test
-pytest                                    # 229 tests, no data needed
+pytest                                    # 252 tests, no data needed
 python run_pipeline.py --raw-data data/raw_data.csv --n-clusters 50
 streamlit run streamlit_app.py            # dashboard over pipeline output
 ```
@@ -43,7 +43,13 @@ python run_pipeline.py --stages data features   # subset of stages
 python run_pipeline.py --n-clusters 100 --test-fraction 0.25 --horizon-steps 96
 python run_pipeline.py --config output/pipeline_config_20240101_120000.json
 python run_pipeline.py --config run.json --n-clusters 100   # flag wins
+python run_pipeline.py --promote                 # also promote it for serving
+python run_pipeline.py --allow-failed-gate       # exit 0 even if it loses
 ```
+
+`run_pipeline.py` exits **3** when the trained model loses to its seasonal-naive
+baseline — a distinct code, because the run itself succeeded and only the model
+is inadequate.
 
 Every flag reaches the code it names; `run_pipeline.py --help` lists them all.
 `--config` and the flags compose: the snapshot sets the starting point, and any
@@ -61,6 +67,39 @@ results = MLPipeline(config=config).run_full_pipeline()
 results["metrics"]      # {'without_lag': {...}, 'with_lag': {...}}
 results["predictions"]  # {'without_lag': DataFrame, 'with_lag': DataFrame}
 ```
+
+### Serving
+
+```bash
+pip install -e ".[serving]"
+python run_pipeline.py --raw-data data/raw_data.csv --promote   # train, gate, promote
+uvicorn ML_Pipeline.api:app --reload                            # serve
+```
+
+| Endpoint | Returns |
+|---|---|
+| `GET /health` | liveness, and whether a model **and its history** actually loaded |
+| `GET /model` | what is serving: features, lags, gate verdict, age, staleness |
+| `GET /clusters` | the clusters this model can forecast for |
+| `GET /forecast?steps=48&cluster=7` | demand per cluster per interval, forward from the last observation |
+
+Three behaviours are deliberate, and each is a measurement turned into code
+rather than a preference:
+
+- **It serves the *promoted* model, not the newest.** `ModelRegistry.promote_model`
+  refuses a model that failed its deploy gate, or that carries no verdict at all —
+  unverified is not the same as passing. `rollback()` restores the previous one.
+  So training a model changes nothing in production until it is promoted.
+- **The horizon is capped at two days** (`steps <= 96`). Past that the measured
+  MASE stops beating seasonal-naive; a longer request is refused with that reason
+  rather than served quietly. Anything past one day carries a warning in the
+  response.
+- **Every response says where its history ends** and whether the model is stale,
+  because a recursive forecast's origin is the last observed interval and a model
+  older than the four-week cadence under-forecasts.
+
+A container is provided but **has not been build-verified** — see the note at the
+top of the `Dockerfile`.
 
 ### Forecasting from a saved model
 
@@ -93,6 +132,7 @@ src/ML_Pipeline/
   xgb_model.py            XGBoost fitting with early stopping
   evaluation.py           metrics, baselines, prediction validation
   clustering.py           offline cluster-count diagnostics
+  api.py                  forecast serving API (FastAPI)
 run_pipeline.py           CLI entry point
 streamlit_app.py          dashboard
 scripts/smoke_run.py      manual full run against real data

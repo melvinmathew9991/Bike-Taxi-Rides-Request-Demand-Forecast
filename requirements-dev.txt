@@ -7,4 +7,4 @@
 #
 # Extras are declared in pyproject.toml under [project.optional-dependencies].
 
--e .[dev,dashboard,plots,notebooks]
+-e .[dev,dashboard,plots,serving,notebooks]
