@@ -292,27 +292,59 @@ provably better.
 
 ### Model staleness: the binding operational constraint
 
-> **This is the one measurement here still predating the current lag set.** The
-> rolling-origin sweep above was re-run on 2026-10-02; this curve was not — it is
-> a separate experiment with no script in the repository. A weekly lag carries the
-> current demand level into the model's inputs, which should slow decay
-> substantially, so the figures below are very likely pessimistic. They are kept
-> because being pessimistic about staleness is the safe direction, and the
-> four-week cadence they justify is the project's most operationally important
-> number. **Re-measure before relaxing that cadence.**
+Re-measured on 2026-10-02 against the current lag set, by
+`scripts/measure_staleness.py`. A model is frozen at an origin and scored on
+successive weeks with no retraining, which is what a lapsed retraining schedule
+produces: the model still sees observed demand arrive, it simply is not refitted.
 
-A model frozen at 2020-12-01 and scored on successive weeks with no retraining:
+**Three origins, not one.** The previous curve froze a single model at
+2020-12-01. On a series where demand grew 5.2x in a year, one origin measures the
+quarter you happened to pick as much as it measures decay — the same objection
+this card raises against single train/test splits. Origins are 2020-09-01,
+2020-10-15 and 2020-12-01.
 
 | weeks stale | 1 | 2 | 3 | 4 | 5 | 6 | 8 | 10 | 13 |
 |---|---|---|---|---|---|---|---|---|---|
-| MASE | 0.84 | 0.72 | 0.78 | 0.76 | 0.98 | **1.23** | 1.38 | 1.55 | 1.75 |
-| level ratio | 0.93 | 0.95 | 0.95 | 0.89 | 0.73 | 0.59 | 0.56 | 0.52 | 0.49 |
+| one-step MASE, **mean** | 0.75 | 0.71 | 0.73 | 0.74 | 0.81 | 0.88 | 0.91 | 0.99 | 1.21 |
+| one-step MASE, **worst origin** | 0.78 | 0.74 | 0.75 | 0.76 | 0.89 | **1.11** | 1.24 | 1.41 | 1.58 |
+| recursive MASE, mean | 0.83 | 0.73 | 0.72 | 0.79 | 0.83 | **1.03** | 1.10 | 1.09 | 1.46 |
+| level ratio, mean | 0.99 | 1.00 | 0.96 | 0.92 | 0.87 | 0.83 | 0.82 | 0.77 | 0.66 |
 
-**The model beats seasonal-naive for about four weeks, reaches parity at five,
-and is worse than naive from week six onward.** By week 13 it forecasts half the
-actual demand. Demand grew 5.2x across the year and trees cannot extrapolate
-past their training range, so a stale model is anchored to a level the city has
-left behind.
+**The four-week cadence stands, and the reason is the worst case rather than the
+average.** On the mean the model holds out to about ten weeks, which is far better
+than the previous curve suggested. But the *worst* origin crosses MASE 1.0 at
+**week six** — exactly where the old single-origin curve crossed it — and a
+retraining cadence has to be set by the worst case, not the mean. Four weeks
+leaves two weeks of margin against the earliest observed failure.
+
+The spread across origins is the finding. At six weeks stale the three origins
+score 0.71, 0.81 and 1.11. The 2020-12-01 origin is much the worst because it sits
+where demand was accelerating hardest: mean demand over its probe window runs from
+5.30 at one week to 10.86 at thirteen. Decay is not a property of the model alone
+but of how fast the city is changing underneath it, so a cadence derived from a
+calm quarter would be dangerous in a growing one.
+
+Two things the weekly lag did and did not do:
+
+- **It improved the average decay substantially.** Mean one-step MASE at six weeks
+  is 0.88, against 1.23 on the previous lag set.
+- **It did not fix the worst case.** 1.11 at six weeks, against 1.23. Better, but
+  still beaten by a baseline that costs nothing.
+
+That asymmetry is what justifies keeping a conservative cadence rather than
+relaxing it on the strength of an improved mean.
+
+**Level ratio degrades earlier than MASE**, which is why it is the thing to
+monitor: it is already at 0.92 by week four and 0.83 by week six, while mean MASE
+is still comfortably under 1. By thirteen weeks the model forecasts two-thirds of
+actual demand.
+
+> The previous revision reported a single-origin curve — 0.84, 0.72, 0.78, 0.76,
+> 0.98, 1.23, 1.38, 1.55, 1.75 — measured against lags `(1, 2, 3)` by an ad-hoc
+> run that was never committed, so it could not be reproduced or re-measured when
+> the feature set changed. It happened to pick the worst of the three origins, so
+> as a bound it was right; as a typical case it was pessimistic. The experiment is
+> now a script.
 
 ### Deployment verdict
 
@@ -327,12 +359,12 @@ Before the seasonal lags it did **not** clear the gate: MASE 0.999 with
 
 Conditions for use:
 
-1. **Retrain at least every four weeks.** Carried over unchanged and still
-   deliberately conservative. The rolling-origin sweep has now been re-run on the
-   current lag set, but the staleness curve this cadence rests on has not — it is
-   a separate experiment, and a weekly lag should slow decay. Erring short costs
-   compute; erring long serves forecasts worse than a free baseline, so the old
-   cadence stands until someone measures the new one.
+1. **Retrain at least every four weeks.** Now measured on the current lag set
+   across three origins, not carried over. The weekly lag improved mean decay a
+   great deal — MASE 0.88 at six weeks against 1.23 before — but the worst origin
+   still loses to seasonal-naive at **week six**, and a cadence follows the worst
+   case. Four weeks leaves two weeks of margin. Reproduce with
+   `scripts/measure_staleness.py`.
 2. **Monitor `level_ratio` in production.** It degrades earliest and most
    visibly, well before RMSE does. Nothing in the repository computes it on a
    schedule yet.

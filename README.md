@@ -136,6 +136,8 @@ src/ML_Pipeline/
 run_pipeline.py           CLI entry point
 streamlit_app.py          dashboard
 scripts/smoke_run.py      manual full run against real data
+scripts/compare_strategies.py  rolling-origin strategy sweep
+scripts/measure_staleness.py   model decay by weeks since training
 tests/                    pytest suite (synthetic data only)
 Notebook/                 original exploratory notebooks (historical record)
 ```
@@ -200,9 +202,11 @@ last week" should not ship.
 >
 > Demand grew 5.2x across the training year and trees cannot extrapolate, so
 > staleness remains the binding constraint. **Retrain at least every four
-> weeks**, and monitor the predicted-to-actual level ratio — it degrades
-> earliest. That cadence is deliberately conservative: the staleness curve behind
-> it still predates the weekly lag, which should slow the decay.
+> weeks**, and monitor the predicted-to-actual level ratio — it degrades earliest,
+> reaching 0.92 by week four while MASE still looks fine. Measured across three
+> freeze origins: the weekly lag improved mean decay a great deal, but the worst
+> origin still loses to the baseline by week six, and a cadence follows the worst
+> case. Reproduce with `scripts/measure_staleness.py`.
 >
 > The gate runs at the end of every training pass, records its verdict in the
 > model registry, and `run_pipeline.py` exits **3** when the model loses, so
