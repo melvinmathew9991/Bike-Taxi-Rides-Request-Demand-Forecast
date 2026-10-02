@@ -164,6 +164,37 @@ class TestConfigIsHonoured:
         assert bundle.rolling_window == config.rolling_window
 
 
+class TestDataMinimisation:
+    """The rider identifier must not reach disk; nothing downstream needs it."""
+
+    def test_the_cleaned_file_carries_no_rider_identifier(self, workspace):
+        """
+        `drop_rider_id` existed to prevent this and was never passed, so every
+        run wrote a pseudonymous rider id joined to ~0.1 m pickup and drop
+        coordinates - the trace from which a home address is inferable.
+        """
+        config = workspace["config"]
+        written = pd.read_csv(config.get_data_path("clean"), compression="gzip")
+        assert "number" not in written.columns
+
+    def test_the_coordinates_are_still_there(self, workspace):
+        """
+        Scope check. Dropping the identifier de-links the trace; it does not
+        remove the coordinates, which stage 4 needs and which only stop being
+        personal data once aggregated into the demand grid.
+        """
+        config = workspace["config"]
+        written = pd.read_csv(config.get_data_path("clean"), compression="gzip")
+        assert {"pick_lat", "pick_lng"}.issubset(written.columns)
+
+    def test_the_demand_grid_carries_no_personal_data_at_all(self, workspace):
+        """The aggregation is what actually removes it."""
+        config = workspace["config"]
+        grid = pd.read_csv(config.get_data_path("prepared"), compression="gzip")
+        restricted = {"number", "pick_lat", "pick_lng", "drop_lat", "drop_lng"}
+        assert not restricted & set(grid.columns)
+
+
 class TestServingContract:
     def test_serving_uses_the_persisted_feature_order(self, workspace):
         """A model must never be handed columns in a different order than it saw."""

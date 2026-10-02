@@ -15,8 +15,8 @@ raw bookings
 ## Quick start
 
 ```bash
-pip install -r requirements.txt
-pytest                                    # 149 tests, no data needed
+pip install -r requirements-dev.txt        # or requirements.txt to run, not test
+pytest                                    # 170 tests, no data needed
 python run_pipeline.py --raw-data data/raw_data.csv --n-clusters 50
 streamlit run streamlit_app.py            # dashboard over pipeline output
 ```

@@ -135,7 +135,16 @@ class MLPipeline:
         if self.df_processed is None:
             self.stage_2_basic_preprocessing()
         self.df_processed = data_prep_advanced(
-            self.df_processed, self.clean_data_path
+            self.df_processed,
+            self.clean_data_path,
+            # The rider identifier is needed by the cleaning rules, which have
+            # already run by this point, and by nothing downstream - stage 4
+            # reads only ts, pick_lat and pick_lng. Carrying it further wrote a
+            # pseudonymous identifier joined to ~0.1 m coordinates to disk on
+            # every run, which is the trace that makes a home address
+            # inferable. `drop_rider_id` existed to prevent that and was never
+            # passed. See docs/DATA_GOVERNANCE.md.
+            drop_rider_id=True,
         )
         logger.info("Shape after business rules: %s", self.df_processed.shape)
         return self.df_processed

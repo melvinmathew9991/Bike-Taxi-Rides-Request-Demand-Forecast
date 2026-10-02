@@ -1,30 +1,16 @@
 # Runtime dependencies.
 #
-# Bounds are on both sides. The previous file used lower bounds only
-# (`pandas>=1.3.0`, `scikit-learn>=1.0.0`, `streamlit>=1.0.0`), which spans
-# several releases with breaking changes -- a fresh install could silently
-# resolve to a version the code was never run against.
+# The pins themselves now live in pyproject.toml under [project.dependencies],
+# so there is one source of truth and `pip install .` produces a working
+# package. This file installs the project and whatever that declares.
 #
-# Verified against: pandas 2.3.3, numpy 2.4.6, scikit-learn 1.9.0, xgboost 3.2.0.
+# Previously the pins lived here only, and pyproject.toml declared no
+# dependencies at all -- so the installable package imported nothing.
+#
 # For a byte-reproducible environment, generate a lockfile:
 #     pip freeze > requirements.lock.txt
 
-# --- Data processing ---
-# pandas 3.0 changes copy-on-write and several groupby/resample defaults.
-pandas>=2.0,<3.0
-numpy>=1.24,<3.0
+-e .
 
-# --- Machine learning ---
-scikit-learn>=1.3,<2.0
-# xgboost 2.0 moved early_stopping_rounds to the constructor; 4.0 may move again.
-xgboost>=2.0,<4.0
-
-# --- Serialization ---
-joblib>=1.3,<2.0
-
-# --- Visualization ---
-matplotlib>=3.7,<4.0
-scipy>=1.10,<2.0
-
-# --- Web app ---
-streamlit>=1.30,<2.0
+# The dashboard needs a plotting stack the core pipeline does not.
+-e .[dashboard]

@@ -1,3 +1,7 @@
+# Build artifacts (`pip install .` writes build/ and *.egg-info/)
+build/
+dist/
+
 # Python cache and bytecode
 __pycache__/
 *.py[cod]
