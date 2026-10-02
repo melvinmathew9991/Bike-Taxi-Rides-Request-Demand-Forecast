@@ -22,6 +22,7 @@ coordinates into a browser session. See docs/DATA_GOVERNANCE.md.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -29,6 +30,10 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from matplotlib.colors import LinearSegmentedColormap
+
+sys.path.insert(0, str(Path(__file__).parent / "src"))
+
+from ML_Pipeline.config import latest_artifact, latest_version  # noqa: E402
 
 # --------------------------------------------------------------------------
 # Data governance: columns that must never reach this dashboard
@@ -43,9 +48,37 @@ RESTRICTED_COLUMNS: frozenset[str] = frozenset(
 #: Columns this dashboard needs in order to do anything at all.
 REQUIRED_COLUMNS: frozenset[str] = frozenset({"ts", "pickup_cluster", "request_count"})
 
-DEFAULT_DATA_PATH = os.environ.get(
-    "BIKETAXI_PREPARED_DATA", "output/Data_Prepared.csv"
-)
+#: Where the pipeline writes. Overridable so a dashboard can point at another
+#: run's output directory.
+OUTPUT_DIR = os.environ.get("BIKETAXI_OUTPUT_DIR", "output")
+
+
+def resolve_data_path(data_type: str = "prepared") -> str:
+    """
+    Path the dashboard should read for a given artefact type.
+
+    Precedence: an explicit `BIKETAXI_PREPARED_DATA` override, then the newest
+    versioned file in the output directory, then the unversioned legacy name.
+
+    This function exists because the previous constant was the literal
+    `"output/Data_Prepared.csv"`, which the pipeline has never written - it
+    writes `Data_Prepared_<version>.csv`. The two never agreed, so a completely
+    successful run still rendered "No prepared demand data found".
+    """
+    override = os.environ.get("BIKETAXI_PREPARED_DATA")
+    if override and data_type == "prepared":
+        return override
+
+    found = latest_artifact(OUTPUT_DIR, data_type)
+    if found is not None:
+        return str(found)
+
+    from ML_Pipeline.config import DATA_STEMS
+
+    return str(Path(OUTPUT_DIR) / f"{DATA_STEMS.get(data_type, data_type)}.csv")
+
+
+DEFAULT_DATA_PATH = resolve_data_path("prepared")
 
 # --------------------------------------------------------------------------
 # Palette (validated categorical/sequential tokens; see dataviz reference)
@@ -455,8 +488,8 @@ def page_forecasts() -> None:
     st.header("Forecasts")
 
     candidates = {
-        "With lag features": "output/data_with_lag.csv",
-        "Without lag features": "output/data_without_lag.csv",
+        "With lag features": resolve_data_path("with_lag"),
+        "Without lag features": resolve_data_path("without_lag"),
     }
     available = {k: v for k, v in candidates.items() if Path(v).exists()}
 
@@ -518,7 +551,12 @@ def main() -> None:
             st.sidebar.success("Using uploaded file.")
         elif Path(path).exists():
             df = load_prepared_data(path)
-            st.sidebar.success(f"Loaded `{path}`")
+            st.sidebar.success(f"Loaded `{Path(path).name}`")
+            # Which run produced this, so a stale output directory is visible
+            # rather than silently assumed to be the latest.
+            version = latest_version(OUTPUT_DIR)
+            if version:
+                st.sidebar.caption(f"Pipeline run `{version}`")
         else:
             render_empty_state(path)
             st.stop()
