@@ -41,6 +41,7 @@ from ML_Pipeline.features import (  # noqa: E402
     attach_cluster_centroids,
     build_feature_names,
 )
+from ML_Pipeline.utils import read_csv_any  # noqa: E402
 from ML_Pipeline.validation import (  # noqa: E402
     rolling_origin_validate,
     rolling_origin_validate_recursive,
@@ -145,7 +146,7 @@ def main() -> int:
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 
-    df = pd.read_csv(args.data, compression="gzip", low_memory=False)
+    df = read_csv_any(args.data)
     df[TS_COL] = pd.to_datetime(df[TS_COL])
     centroids = np.asarray(load(args.cluster_model).cluster_centers_)
 

@@ -210,6 +210,64 @@ class ModelEvaluator:
         return result
 
     @staticmethod
+    def per_cluster_error(
+        panel: pd.DataFrame,
+        predictions,
+        *,
+        season_length: int = 336,
+        ts_col: str = "ts",
+        cluster_col: str = "pickup_cluster",
+        target: str = "request_count",
+    ) -> pd.DataFrame:
+        """
+        Error per cluster, not just globally.
+
+        A single global RMSE hides the distribution that matters operationally.
+        This model decides where supply goes, so its errors are not evenly
+        consequential: a cluster the model systematically under-forecasts gets
+        systematically under-served, and `DATA_GOVERNANCE.md` § 4 notes that
+        under-served areas are structurally the most exposed. The model card's
+        maintenance section has always required monitoring error per cluster;
+        nothing computed it.
+
+        Returns:
+            One row per cluster, worst MASE first: `n`, `mean_actual`,
+            `mean_pred`, `level_ratio`, `rmse`, `mae`, `mase`.
+        """
+        ordered = panel.sort_values([cluster_col, ts_col]).reset_index(drop=True)
+        work = ordered[[cluster_col, target]].copy()
+        work["_pred"] = np.asarray(predictions, dtype="float64").ravel()
+        work["_naive"] = ModelEvaluator.seasonal_naive_baseline(
+            ordered, season_length=season_length, ts_col=ts_col,
+            cluster_col=cluster_col, target=target,
+        ).to_numpy(dtype="float64")
+
+        rows = []
+        for cluster, group in work.groupby(cluster_col, sort=True):
+            actual = group[target].to_numpy(dtype="float64")
+            pred = group["_pred"].to_numpy(dtype="float64")
+            rows.append(
+                {
+                    cluster_col: cluster,
+                    "n": len(group),
+                    "mean_actual": float(actual.mean()),
+                    "mean_pred": float(pred.mean()),
+                    "level_ratio": float(pred.mean() / actual.mean())
+                    if actual.mean() else float("nan"),
+                    "rmse": float(np.sqrt(np.mean((actual - pred) ** 2))),
+                    "mae": float(np.mean(np.abs(actual - pred))),
+                    "mase": ModelEvaluator.mase(
+                        actual, pred, group["_naive"].to_numpy(dtype="float64")
+                    ),
+                }
+            )
+        return (
+            pd.DataFrame(rows)
+            .sort_values("mase", ascending=False, na_position="last")
+            .reset_index(drop=True)
+        )
+
+    @staticmethod
     def compare_models(models_dict: dict[str, tuple]) -> pd.DataFrame:
         """Compare several models given `{name: (y_true, y_pred)}`."""
         results = []

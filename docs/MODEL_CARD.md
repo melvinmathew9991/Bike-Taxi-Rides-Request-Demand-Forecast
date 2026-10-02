@@ -39,20 +39,34 @@ Target: `request_count`, requests per cluster per 30 minutes.
 
 ### Measured target statistics
 
-From the pipeline's own `Data_Prepared.csv` on the reference dataset
-(878,300 rows = 17,566 intervals x 50 clusters, 3,708,240 requests retained from
-8,381,556 raw bookings — the business rules remove 55.4%):
+From the pipeline's own `Data_Prepared.csv.gz` on the reference dataset
+(878,300 rows = 17,566 intervals x 50 clusters, 3,866,172 requests retained from
+8,381,556 raw bookings — the business rules remove 53.5%):
 
 | | value |
 |---|---|
-| mean | 4.222 |
-| std | 6.778 |
+| mean | 4.402 |
+| std | 7.320 |
 | median | 2.0 |
-| max | 110 |
-| zero-demand intervals | 37.4% |
+| max | 141 |
+| zero-demand intervals | 37.0% |
 
-The target is **over-dispersed and zero-inflated** — variance (45.9) is roughly
-11x the mean, and over a third of all interval-cluster cells are empty. That is
+> **The retained count changed on 2026-10-02.** Rule 1 — "same rider rebooking
+> the same pickup pin within an hour" — was evaluated as a different rule: it
+> flagged every row whose (rider, pin) recurred *anywhere* in the dataset,
+> measured the gap against the rider's previous booking from *any* pin, and
+> dropped the first of each group as well. It also compared floored hours, so
+> "within an hour" spanned anything under two. Corrected, the rules retain
+> 3,866,172 requests instead of 3,708,240 — **157,932 more**, +4.3%.
+>
+> Rule 1 itself drops 548,437 fewer rows, but Rule 2 (retries under 8 minutes
+> apart) independently catches about 390,000 of them, which is the right outcome
+> for a burst of requests minutes apart. The rows actually recovered are
+> commuters' legitimate repeat bookings on separate days — which matters for a
+> model whose core signal is habitual travel.
+
+The target is **over-dispersed and zero-inflated** — variance (53.6) is roughly
+12x the mean, and over a third of all interval-cluster cells are empty. That is
 what motivates `count:poisson`, the zero floor on predictions, and restricting
 percentage error to non-zero actuals.
 
@@ -113,10 +127,11 @@ warning when the model loses.
 
 ### Single-split performance — a worst case, not the verdict
 
-Measured from the run of 2026-10-02 (`model_version 20261002_194913`), the
-first with daily and weekly lags. Chronological split: train 2020-04-02 →
-2021-01-14 (689,200 rows), test 2021-01-14 → 2021-03-26 (172,300 rows).
-Test-period mean demand 9.08 against the training period's 3.06.
+Measured from the run of 2026-10-02 (`model_version 20261002_214312`), the
+first with both the daily/weekly lags and the corrected Rule 1. Chronological
+split: train 2020-04-02 → 2021-01-14 (689,200 rows), test 2021-01-14 →
+2021-03-26 (172,300 rows). Test-period mean demand 9.54 against the training
+period's 3.17.
 
 Training starts a week later than the grid does, and both row counts are lower
 than before this lag set landed: `lag_336` makes the first 336 intervals of each
@@ -131,14 +146,14 @@ representative of a model retrained on a normal cadence.
 
 | approach | RMSE | MAE | MASE | verdict |
 |---|---|---|---|---|
-| model **with lag** | **3.751** | **2.322** | **0.809** | beats naive by 19% |
-| seasonal naive (same time last week) | 4.618 | 2.920 | 1.000 | — |
-| model **without lag** | 8.628 | 4.820 | 1.752 | loses badly |
-| cluster historical mean | 9.498 | 6.578 | 2.282 | loses badly |
+| model **with lag** | **4.037** | **2.420** | **0.805** | beats naive by 18% |
+| seasonal naive (same time last week) | 4.901 | 3.063 | 1.000 | — |
+| model **without lag** | 9.308 | 5.127 | 1.780 | loses badly |
+| cluster historical mean | 10.229 | 6.953 | 2.302 | loses badly |
 
 All four rows are scored on the **same** window — the lag model's test split, so
 they are directly comparable. Note this makes the without-lag figure here
-(8.628) differ slightly from the 8.558 in `model_registry.json`, which scores it
+(9.308) differ slightly from the 9.232 in `model_registry.json`, which scores it
 on its own split: without a weekly lag it needs no 336-interval warm-up, so its
 test window starts ~2 days earlier and is 3,350 rows longer. Same model, same
 settings, different window.
@@ -147,11 +162,10 @@ settings, different window.
 
 | | value |
 |---|---|
-| RMSE | 3.242 |
-| MAE | 2.023 |
-| mean actual | 6.37 |
-| mean predicted | 5.75 |
-| level ratio | **0.90** |
+| RMSE | 3.811 |
+| mean actual | 6.74 |
+| mean predicted | 5.93 |
+| level ratio | **0.88** |
 
 > **What the seasonal lags changed.** Before them the lag set stopped at 90
 > minutes, and the model was being asked to beat a baseline built from the value
@@ -159,10 +173,14 @@ settings, different window.
 >
 > | | before | after |
 > |---|---|---|
-> | one-step RMSE | 4.803 | **3.751** |
-> | one-step MASE | 0.999 — fails the gate | **0.809** — clears it |
-> | recursive 24h RMSE | 8.261 | **3.242** |
-> | recursive level ratio | 0.21 (predicted 1.35 vs actual 6.37) | **0.90** |
+> | one-step MASE | 0.999 — fails the gate | **0.805** — clears it |
+> | recursive 24h level ratio | 0.21 (predicted 1.35 vs actual 6.37) | **0.88** |
+>
+> **Compare MASE, not RMSE.** The Rule 1 correction retains 157,932 more
+> requests, which raises mean demand per interval from 4.222 to 4.402 — so
+> absolute error rose with it even though the model improved. RMSE is not
+> comparable across the two datasets; MASE and R² are, and both moved the right
+> way (MASE 0.999 to 0.805, R² 0.807 to 0.884).
 >
 > The level ratio is the one to note. A recursive forecast anchored to its
 > training-era level used to under-forecast demand roughly five-fold over a day.
@@ -181,11 +199,11 @@ on the same rows:
 
 | horizon | | share of steps where `lag_48` is a prediction | RMSE | MASE | level ratio |
 |---|---|---|---|---|---|
-| 48 | 1 day | 0% | 3.242 | **0.800** | 0.90 |
-| 96 | 2 days | 50% | 3.615 | **0.803** | 1.06 |
-| 192 | 4 days | 75% | 4.521 | 0.876 | 0.91 |
-| 336 | 1 week | 86% | 5.239 | 0.989 | 0.84 |
-| 672 | 2 weeks | 93% | 5.733 | **1.065** | 0.78 |
+| 48 | 1 day | 0% | 3.811 | **0.794** | 0.88 |
+| 96 | 2 days | 50% | 4.065 | **0.815** | 1.06 |
+| 192 | 4 days | 75% | 5.211 | 0.887 | 0.90 |
+| 336 | 1 week | 86% | 5.902 | 0.986 | 0.84 |
+| 672 | 2 weeks | 93% | 6.220 | **1.064** | 0.78 |
 
 **The deploy gate is cleared comfortably out to about two days, marginally at
 four, and not at all beyond a week.** At a two-week horizon the model is worse
@@ -193,8 +211,8 @@ than seasonal-naive and should not be used; the baseline is free.
 
 This is a property of the lag set, not a regression — at every horizon measured
 the current model beats what preceded it (recursive RMSE 8.261 at one day
-before these lags). But it means the headline MASE of 0.809 is a *one-step*
-figure, and the recursive figure of 0.800 is a *one-day* figure. Neither
+before these lags). But it means the headline MASE of 0.805 is a *one-step*
+figure, and the recursive figure of 0.794 is a *one-day* figure. Neither
 generalises to an arbitrary horizon, and `run_pipeline.py --horizon-steps` will
 happily accept one.
 
@@ -257,8 +275,8 @@ left behind.
 ### Deployment verdict
 
 **Usable.** The model clears its own deploy gate on the single chronological
-split — MASE 0.809 one step ahead, beating seasonal-naive by 19% — and holds the
-right demand level across a 24-hour recursive horizon (level ratio 0.90). It
+split — MASE 0.805 one step ahead, beating seasonal-naive by 18% — and holds the
+right demand level across a 24-hour recursive horizon (level ratio 0.88). It
 does this on the staleness stress test, which is the harshest configuration
 measured here, so a model retrained on a normal cadence should do better.
 
@@ -369,9 +387,13 @@ as a record of the original work.
    invisible — see the feedback-loop discussion in `DATA_GOVERNANCE.md`.
 7. **Cluster geometry is fixed at training time.** The city changes; the cluster
    model does not, until refitted.
-8. **Aggressive cleaning.** The business rules remove rebookings and retries on
-   the assumption they are duplicates of one intention. If a rider genuinely
-   requests two rides nine minutes apart, that is counted once.
+8. **Aggressive cleaning.** The business rules remove 53.5% of raw bookings, on
+   the assumption that rebookings and retries are duplicates of one intention.
+   If a rider genuinely requests two rides nine minutes apart, that is counted
+   once. The thresholds — one hour at the same pin, eight minutes anywhere — are
+   domain judgements, now tested against their stated intent in
+   `tests/test_cleaning_rules.py` but not validated against ground truth, which
+   would need labelled data about which requests became trips.
 
 ## Ethical considerations
 

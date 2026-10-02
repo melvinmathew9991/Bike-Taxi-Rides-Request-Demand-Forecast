@@ -16,7 +16,7 @@ raw bookings
 
 ```bash
 pip install -r requirements-dev.txt        # or requirements.txt to run, not test
-pytest                                    # 170 tests, no data needed
+pytest                                    # 229 tests, no data needed
 python run_pipeline.py --raw-data data/raw_data.csv --n-clusters 50
 streamlit run streamlit_app.py            # dashboard over pipeline output
 ```
@@ -113,10 +113,10 @@ The lag set reaches back a week: `lag_1/2/3` (the last 90 minutes), `lag_48`
 (same time yesterday) and `lag_336` (same time last week). The weekly lag is the
 one that matters most — the model is judged against a seasonal-naive baseline
 built from exactly that value, and until it was given the signal it could not
-beat it. Adding the daily and weekly lags took one-step RMSE from 4.803 to
-**3.751** and MASE from 0.999 to **0.809**. It also fixed level tracking over a
-recursive horizon: the 24-hour forecast used to predict 1.35 against an actual
-of 6.37, and now predicts 5.75.
+beat it. Adding the daily and weekly lags took one-step MASE from 0.999 — a
+failed deploy gate — to **0.805**, and R² from 0.807 to 0.884. It also fixed
+level tracking over a recursive horizon: the 24-hour forecast used to predict
+1.35 against an actual of 6.37, and now tracks at a level ratio of 0.88.
 
 The cost is a serving precondition: recursive forecasting needs **7 days of
 contiguous history per cluster**, which the pipeline supplies from the demand
@@ -124,8 +124,8 @@ grid rather than from the test file.
 
 The gain is also horizon-dependent. Within a 48-step horizon the new lags are
 always real observations; past that they start consuming the model's own
-predictions. Measured MASE against seasonal-naive: **0.80 at one day, 0.80 at
-two, 0.88 at four, 0.99 at one week, 1.07 at two**. So keep `--horizon-steps` at
+predictions. Measured MASE against seasonal-naive: **0.79 at one day, 0.82 at
+two, 0.89 at four, 0.99 at one week, 1.06 at two**. So keep `--horizon-steps` at
 or below ~96; beyond a week the model only ties a baseline that costs nothing.
 See [docs/MODEL_CARD.md](docs/MODEL_CARD.md) for the table.
 
@@ -144,8 +144,9 @@ Before deploying, check the model against the baselines in
 `ModelEvaluator.compare_to_baselines`. A demand model that cannot beat "same time
 last week" should not ship.
 
-> **On the reference dataset it clears that bar.** MASE 0.809 one step ahead,
-> beating seasonal-naive by 19%, measured on the frozen chronological split —
+> **On the reference dataset it clears that bar, and the check now runs
+> automatically.** MASE 0.805 one step ahead, beating seasonal-naive by 18%,
+> measured on the frozen chronological split —
 > the harshest configuration in the repository, where the test window runs up to
 > ten weeks past the training cut.
 >
@@ -156,8 +157,10 @@ last week" should not ship.
 > previous lag set, and has not yet been re-measured with the weekly lag that
 > should slow the decay.
 >
-> The gate is not yet run automatically — call `compare_to_baselines` at each
-> retrain. See [docs/MODEL_CARD.md](docs/MODEL_CARD.md) for the measured numbers.
+> The gate runs at the end of every training pass, records its verdict in the
+> model registry, and `run_pipeline.py` exits **3** when the model loses, so
+> automation can refuse to promote it. Error per cluster is reported alongside.
+> See [docs/MODEL_CARD.md](docs/MODEL_CARD.md) for the measured numbers.
 
 ## Development
 

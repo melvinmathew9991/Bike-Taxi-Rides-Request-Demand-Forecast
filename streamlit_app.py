@@ -34,6 +34,7 @@ from matplotlib.colors import LinearSegmentedColormap
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from ML_Pipeline.config import latest_artifact, latest_version  # noqa: E402
+from ML_Pipeline.utils import read_csv_any  # noqa: E402
 
 # --------------------------------------------------------------------------
 # Data governance: columns that must never reach this dashboard
@@ -160,13 +161,8 @@ def assert_no_personal_data(df: pd.DataFrame) -> None:
 
 
 def _read_any_csv(source) -> pd.DataFrame:
-    """Read a CSV that may or may not be gzip-compressed."""
-    try:
-        return pd.read_csv(source, compression="gzip", low_memory=False)
-    except (OSError, EOFError, ValueError):
-        if hasattr(source, "seek"):
-            source.seek(0)
-        return pd.read_csv(source, compression=None, low_memory=False)
+    """Read a CSV that may or may not be gzip-compressed, path or upload."""
+    return read_csv_any(source)
 
 
 @st.cache_data(show_spinner="Loading demand grid...")

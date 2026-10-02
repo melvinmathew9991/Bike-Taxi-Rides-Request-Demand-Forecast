@@ -24,13 +24,13 @@ Reference dataset: 8,381,556 rows, 2020-03-26 to 2021-03-26, Bangalore.
 Same schema. The serving window. `number` is not required for forecasting, only
 `ts`, `pick_lat`, `pick_lng`.
 
-## Intermediate: `output/clean_data_<version>.csv`
+## Intermediate: `output/clean_data_<version>.csv.gz`
 
 **Contains personal data.** Booking-level, post-cleaning. Columns as
 `data_prep_advanced.CLEANED_COLUMNS`, adding `geodesic_distance` (km),
 calendar features, and per-rider booking gaps.
 
-## The aggregation boundary: `output/Data_Prepared_<version>.csv`
+## The aggregation boundary: `output/Data_Prepared_<version>.csv.gz`
 
 **No personal data from here on.** Rectangular grid, one row per
 (interval x cluster).
@@ -72,3 +72,26 @@ meaningful relative to the model that produced them.
 `tests/conftest.py` builds a realistic grid in-memory (daily peaks, several
 pickup hotspots). Reuse those fixtures to exercise the pipeline without the real
 dataset.
+
+## Reading the outputs
+
+Every output is gzip-compressed and named `.csv.gz`, so nothing special is
+needed:
+
+```python
+import pandas as pd
+pd.read_csv("output/Data_Prepared_20260102_030405.csv.gz")
+```
+
+They were previously written as `.csv` while holding gzip bytes, which pandas
+cannot infer from — a plain `read_csv` failed with
+`UnicodeDecodeError: invalid start byte`. Input files may still be gzip under a
+`.csv` name; `ML_Pipeline.utils.read_csv_any` detects that by content.
+
+To resolve the newest run without hardcoding a version:
+
+```python
+from ML_Pipeline.config import latest_artifact, latest_version
+latest_version("output")                   # '20260102_030405'
+latest_artifact("output", "prepared")      # Path to the newest demand grid
+```

@@ -205,11 +205,104 @@ def model_training(
     except ValueError as exc:
         logger.warning("Recursive backtest skipped: %s", exc)
 
+    # The deploy gate, run rather than documented. `compare_to_baselines` was
+    # written, documented and unit-tested, and called by nothing outside the test
+    # suite - so the check that decides whether a model is fit to ship had to be
+    # remembered and run by hand. It now runs on every training pass and the
+    # verdict is recorded on the bundle, which puts it in the registry too.
+    _run_deploy_gate(bundle_lag, split_lag.test, config)
+
     bundle_lag.save(with_lag_model_path)
 
     logger.info("Total training time: %s", datetime.now() - started)
     _log_comparison(bundle_nolag, bundle_lag)
     return {"without_lag": bundle_nolag, "with_lag": bundle_lag}
+
+
+def _season_length(config: Any) -> int:
+    """Intervals in one week - the seasonal period for the naive baseline."""
+    step = pd.Timedelta(pd.tseries.frequencies.to_offset(config.freq))
+    return int(pd.Timedelta("7D") / step)
+
+
+def _run_deploy_gate(bundle: ModelBundle, test: pd.DataFrame, config: Any) -> None:
+    """
+    Score the model against the baselines it must beat, and record the verdict.
+
+    A demand model that cannot beat "same time last week" should not ship: the
+    baseline is free, interpretable and needs no retraining. The verdict lands in
+    `bundle.metrics` as `baseline_mase` and `beats_seasonal_naive`, so it travels
+    into the model registry with everything else.
+
+    Also reports error per cluster, which the model card requires and nothing
+    computed. Only the worst few are logged; the full table is returned to the
+    caller through `bundle.metrics` summaries rather than printed in full.
+    """
+    season = _season_length(config)
+    try:
+        predictions = bundle.predict(test)
+        comparison = ModelEvaluator.compare_to_baselines(
+            test, predictions, season_length=season
+        )
+    except (KeyError, ValueError) as exc:
+        logger.warning("Deploy gate skipped: %s", exc)
+        return
+
+    # `compare_to_baselines` omits the baseline row when every naive prediction is
+    # NaN, which happens whenever the test window is shorter than one seasonal
+    # period - a short synthetic panel, or a narrow test fraction. There is no
+    # verdict to record in that case, and recording a pass would be worse than
+    # recording nothing: `beats_seasonal_naive` stays absent so callers can tell
+    # "not measured" from "passed".
+    if "seasonal_naive" not in comparison.index:
+        logger.warning(
+            "Deploy gate not evaluated: the test window is shorter than the "
+            "seasonal period (%d intervals), so a same-time-last-week baseline "
+            "has no values to compare against. Widen the test window or shorten "
+            "the season to gate this model.", season,
+        )
+        return
+
+    mase = float(comparison.loc["model", "mase"])
+    naive_rmse = float(comparison.loc["seasonal_naive", "rmse"])
+    beats = bool(comparison.loc["model", "rmse"] < naive_rmse)
+
+    bundle.metrics["baseline_mase"] = mase
+    bundle.metrics["baseline_naive_rmse"] = naive_rmse
+    bundle.metrics["beats_seasonal_naive"] = float(beats)
+    bundle.metrics["baseline_season_length"] = float(season)
+
+    logger.info(
+        "Deploy gate (season length %d intervals):\n%s", season, comparison.to_string()
+    )
+    if beats:
+        logger.info(
+            "GATE PASSED: MASE %.4f against seasonal-naive. The model earns its "
+            "place over the free baseline.", mase,
+        )
+    else:
+        logger.error(
+            "GATE FAILED: MASE %.4f - the model does not beat a seasonal-naive "
+            "forecast. Ship the baseline instead until it does.", mase,
+        )
+
+    per_cluster = ModelEvaluator.per_cluster_error(
+        test, predictions, season_length=season
+    )
+    losing = per_cluster[per_cluster["mase"] >= 1.0]
+    bundle.metrics["clusters_losing_to_naive"] = float(len(losing))
+    bundle.metrics["worst_cluster_mase"] = float(per_cluster["mase"].max())
+    logger.info(
+        "Per-cluster error: %d of %d clusters lose to seasonal-naive. Worst five:\n%s",
+        len(losing), len(per_cluster),
+        per_cluster.head(5).to_string(index=False),
+    )
+    if len(losing):
+        logger.warning(
+            "These clusters lose to the baseline and will be under-served if the "
+            "model drives supply: %s",
+            ", ".join(str(c) for c in losing[CLUSTER_COL].tolist()[:20]),
+        )
 
 
 def _default_horizon(config: Any) -> int:
