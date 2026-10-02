@@ -16,9 +16,9 @@ raw bookings
 
 ```bash
 pip install -r requirements-dev.txt        # or requirements.txt to run, not test
-pytest                                    # 252 tests, no data needed
+pytest                                    # 260 tests, no data needed
 python run_pipeline.py --raw-data data/raw_data.csv --n-clusters 50
-streamlit run streamlit_app.py            # dashboard over pipeline output
+streamlit run streamlit_app.py            # dashboard, incl. model performance
 ```
 
 The repository ships **no data** — it carries personal data and is git-ignored.
@@ -75,6 +75,13 @@ pip install -e ".[serving]"
 python run_pipeline.py --raw-data data/raw_data.csv --promote   # train, gate, promote
 uvicorn ML_Pipeline.api:app --reload                            # serve
 ```
+
+The dashboard's **Model performance** page scores the promoted model: the deploy
+gate verdict and model age, a recursive backtest of the last closed horizon against
+what actually happened, MASE against the seasonal-naive baseline, and error per
+cluster with the clusters that lose to the baseline called out by name. It shares
+`ML_Pipeline.serving` with the API, so the two cannot disagree about which model is
+live.
 
 | Endpoint | Returns |
 |---|---|
