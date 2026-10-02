@@ -15,8 +15,8 @@ raw bookings
 ## Quick start
 
 ```bash
-pip install -r requirements.txt
-pytest                                    # 149 tests, no data needed
+pip install -r requirements-dev.txt        # or requirements.txt to run, not test
+pytest                                    # 170 tests, no data needed
 python run_pipeline.py --raw-data data/raw_data.csv --n-clusters 50
 streamlit run streamlit_app.py            # dashboard over pipeline output
 ```
@@ -103,9 +103,31 @@ Notebook/                 original exploratory notebooks (historical record)
 ## Modelling notes
 
 Two variants are trained. **Without lag** uses calendar and geography only, so it
-applies to any future interval. **With lag** adds recent demand and is more
-accurate one step out, but must be applied recursively, compounding its own
-errors — `recursive_rmse` in the model bundle measures that honestly.
+applies to any future interval — but it has no channel carrying the current
+demand level, loses to a free baseline by 75%, and is useful only for cold
+starts. **With lag** adds recent demand and must be applied recursively,
+compounding its own errors; `recursive_rmse` in the model bundle measures that
+honestly.
+
+The lag set reaches back a week: `lag_1/2/3` (the last 90 minutes), `lag_48`
+(same time yesterday) and `lag_336` (same time last week). The weekly lag is the
+one that matters most — the model is judged against a seasonal-naive baseline
+built from exactly that value, and until it was given the signal it could not
+beat it. Adding the daily and weekly lags took one-step RMSE from 4.803 to
+**3.751** and MASE from 0.999 to **0.809**. It also fixed level tracking over a
+recursive horizon: the 24-hour forecast used to predict 1.35 against an actual
+of 6.37, and now predicts 5.75.
+
+The cost is a serving precondition: recursive forecasting needs **7 days of
+contiguous history per cluster**, which the pipeline supplies from the demand
+grid rather than from the test file.
+
+The gain is also horizon-dependent. Within a 48-step horizon the new lags are
+always real observations; past that they start consuming the model's own
+predictions. Measured MASE against seasonal-naive: **0.80 at one day, 0.80 at
+two, 0.88 at four, 0.99 at one week, 1.07 at two**. So keep `--horizon-steps` at
+or below ~96; beyond a week the model only ties a baseline that costs nothing.
+See [docs/MODEL_CARD.md](docs/MODEL_CARD.md) for the table.
 
 Three properties of the target drive the design:
 
@@ -122,15 +144,20 @@ Before deploying, check the model against the baselines in
 `ModelEvaluator.compare_to_baselines`. A demand model that cannot beat "same time
 last week" should not ship.
 
-> **On the reference dataset it clears that bar — but only if retrained.**
-> Across five rolling origins it beats seasonal-naive every time (MASE 0.79
-> one-step, 0.95 over a 24-hour recursive horizon). Demand grew 5.2x across the
-> training year, and a frozen model falls *below* the baseline by week six and
-> forecasts half the actual demand by week thirteen.
+> **On the reference dataset it clears that bar.** MASE 0.809 one step ahead,
+> beating seasonal-naive by 19%, measured on the frozen chronological split —
+> the harshest configuration in the repository, where the test window runs up to
+> ten weeks past the training cut.
 >
-> **Retrain at least every four weeks**, and monitor the predicted-to-actual
-> level ratio — it degrades earliest. See
-> [docs/MODEL_CARD.md](docs/MODEL_CARD.md) for the measured numbers.
+> Demand grew 5.2x across the training year and trees cannot extrapolate, so
+> staleness remains the binding constraint. **Retrain at least every four
+> weeks**, and monitor the predicted-to-actual level ratio — it degrades
+> earliest. That cadence is deliberately conservative: it was measured under the
+> previous lag set, and has not yet been re-measured with the weekly lag that
+> should slow the decay.
+>
+> The gate is not yet run automatically — call `compare_to_baselines` at each
+> retrain. See [docs/MODEL_CARD.md](docs/MODEL_CARD.md) for the measured numbers.
 
 ## Development
 

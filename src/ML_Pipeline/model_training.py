@@ -180,10 +180,25 @@ def model_training(
         bundle_lag.metrics.update(
             {f"recursive_{k}": float(v) for k, v in recursive_metrics.items()}
         )
+        # These two numbers are NOT a clean before/after of error compounding,
+        # and the log used to imply they were ("the gap is the cost of
+        # compounding its own errors"). They are measured on different windows:
+        # test_rmse covers the whole test period, while the backtest covers only
+        # its final `horizon_steps` intervals. Once the lag set included a
+        # weekly lag the recursive number came out *lower* than the one-step
+        # number, which made the old wording self-contradictory.
+        #
+        # Error does still compound - see the horizon table in
+        # docs/MODEL_CARD.md, where MASE goes 0.80 at one day to 1.07 at two
+        # weeks - but it is not what the difference between these two figures
+        # measures.
         logger.info(
-            "Recursive backtest over %d steps: RMSE %.4f (one-step test RMSE was "
-            "%.4f - the gap is the cost of compounding its own errors).",
+            "Recursive backtest over %d steps (%s to %s): RMSE %.4f. "
+            "Not comparable to the one-step test RMSE of %.4f, which covers the "
+            "whole test period rather than this horizon.",
             horizon_steps,
+            backtest[TS_COL].min(),
+            backtest[TS_COL].max(),
             recursive_metrics["rmse"],
             bundle_lag.metrics.get("test_rmse", float("nan")),
         )

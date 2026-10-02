@@ -26,6 +26,74 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+#: Artefact filename stems, shared by the path builders on `PipelineConfig` and
+#: by `latest_artifact` below. One definition, so a reader and a writer cannot
+#: disagree about what a file is called - which is exactly how the dashboard
+#: ended up looking for `Data_Prepared.csv` while the pipeline wrote
+#: `Data_Prepared_<version>.csv`.
+MODEL_STEMS: dict[str, str] = {
+    "without_lag": "prediction_model_without_lag",
+    "with_lag": "prediction_model_with_lag",
+    "clustering": "pickup_cluster_model",
+}
+
+DATA_STEMS: dict[str, str] = {
+    "clean": "clean_data",
+    "prepared": "Data_Prepared",
+    "with_lag": "data_with_lag",
+    "without_lag": "data_without_lag",
+}
+
+
+def latest_artifact(output_dir: str | Path, data_type: str) -> Path | None:
+    """
+    Newest versioned dataset of a given type in `output_dir`.
+
+    Every artefact is written as `<stem>_<model_version>.csv`, where the version
+    is `%Y%m%d_%H%M%S`. That format sorts lexicographically in chronological
+    order, so the newest run is simply the maximum name - no date parsing, and
+    no dependence on filesystem timestamps, which copying a directory destroys.
+
+    A consumer that hardcodes the unversioned name finds nothing after a
+    successful run. The dashboard did exactly that, and rendered its empty state
+    over a complete set of outputs.
+
+    Args:
+        output_dir: Directory the pipeline writes to.
+        data_type: Key of `DATA_STEMS`, or a literal stem.
+
+    Returns:
+        Path to the newest match, the unversioned legacy file if that is all
+        there is, or None when neither exists.
+    """
+    directory = Path(output_dir)
+    if not directory.is_dir():
+        return None
+
+    stem = DATA_STEMS.get(data_type, data_type)
+    versioned = sorted(directory.glob(f"{stem}_*.csv"))
+    if versioned:
+        return versioned[-1]
+
+    legacy = directory / f"{stem}.csv"
+    return legacy if legacy.exists() else None
+
+
+def latest_version(output_dir: str | Path) -> str | None:
+    """
+    Version string of the most recent run in `output_dir`.
+
+    Read from the configuration snapshots, since those are written last and so
+    only exist for runs that reached the end.
+    """
+    directory = Path(output_dir)
+    if not directory.is_dir():
+        return None
+    snapshots = sorted(directory.glob("pipeline_config_*.json"))
+    if not snapshots:
+        return None
+    return snapshots[-1].stem.removeprefix("pipeline_config_")
+
 
 @dataclass
 class PipelineConfig:
@@ -63,7 +131,28 @@ class PipelineConfig:
     validation_fraction: float = 0.1
 
     # --- Features --------------------------------------------------------
-    lag_features: tuple[int, ...] = (1, 2, 3)
+    #: Lags in intervals. At 30 minutes: 1/2/3 are the last 90 minutes, 48 is
+    #: the same time yesterday, and 336 is the same time last week.
+    #:
+    #: The daily and weekly lags are not optional refinements. This model is
+    #: judged against a seasonal-naive baseline - the value 336 intervals
+    #: earlier - and with lags stopping at 90 minutes it was being asked to
+    #: beat a signal it had never been given. It did not: on the chronological
+    #: split it scored RMSE 4.8032 against the baseline's 4.6062, MASE 0.9992,
+    #: and `compare_to_baselines` logged "ship the baseline instead".
+    #:
+    #: Adding 48 and 336 takes that to RMSE 3.7505, MASE 0.8086. Measured
+    #: ablation also tried 24-hour and 7-day rolling means on top: they add
+    #: only 0.0116 MASE, which does not justify changing the persisted feature
+    #: contract (`rolling_window` is a scalar in the bundle), so they are left
+    #: out.
+    #:
+    #: Cost: `lag_336` makes the first week of each cluster unusable as
+    #: training data - 16,800 rows of 878,300 on the reference dataset - and
+    #: recursive serving now needs 7 days of contiguous history per cluster
+    #: rather than 90 minutes. See `prediction_pipeline`, which seeds from the
+    #: demand grid for exactly this reason.
+    lag_features: tuple[int, ...] = (1, 2, 3, 48, 336)
     rolling_window: int = 3
 
     # --- Model -----------------------------------------------------------
@@ -154,23 +243,12 @@ class PipelineConfig:
         at a file that did not exist. One method now owns the naming and both the
         writer and the registry call it.
         """
-        names = {
-            "without_lag": "prediction_model_without_lag",
-            "with_lag": "prediction_model_with_lag",
-            "clustering": "pickup_cluster_model",
-        }
-        stem = names.get(model_type, model_type)
+        stem = MODEL_STEMS.get(model_type, model_type)
         return str(Path(self.output_dir) / f"{stem}_{self.model_version}.joblib")
 
     def get_data_path(self, data_type: str) -> str:
         """Path for an intermediate or output dataset."""
-        names = {
-            "clean": "clean_data",
-            "prepared": "Data_Prepared",
-            "with_lag": "data_with_lag",
-            "without_lag": "data_without_lag",
-        }
-        stem = names.get(data_type, data_type)
+        stem = DATA_STEMS.get(data_type, data_type)
         return str(Path(self.output_dir) / f"{stem}_{self.model_version}.csv")
 
     # --- Serialisation ---------------------------------------------------

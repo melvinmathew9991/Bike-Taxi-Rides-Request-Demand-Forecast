@@ -135,7 +135,16 @@ class MLPipeline:
         if self.df_processed is None:
             self.stage_2_basic_preprocessing()
         self.df_processed = data_prep_advanced(
-            self.df_processed, self.clean_data_path
+            self.df_processed,
+            self.clean_data_path,
+            # The rider identifier is needed by the cleaning rules, which have
+            # already run by this point, and by nothing downstream - stage 4
+            # reads only ts, pick_lat and pick_lng. Carrying it further wrote a
+            # pseudonymous identifier joined to ~0.1 m coordinates to disk on
+            # every run, which is the trace that makes a home address
+            # inferable. `drop_rider_id` existed to prevent that and was never
+            # passed. See docs/DATA_GOVERNANCE.md.
+            drop_rider_id=True,
         )
         logger.info("Shape after business rules: %s", self.df_processed.shape)
         return self.df_processed
@@ -208,6 +217,10 @@ class MLPipeline:
             predict_with_lag_path=self.config.get_model_path("with_lag"),
             data_with_lag_path=self.config.get_data_path("with_lag"),
             data_without_lag_path=self.config.get_data_path("without_lag"),
+            # Seeds the recursive model's lags. The test file is typically one
+            # day; the lag set reaches a week back, so the depth has to come
+            # from the grid this run already produced.
+            history_path=self.prepared_data_path,
             horizon_steps=self.config.horizon_steps,
             interval_minutes=self.config.interval_minutes,
             freq=self.config.freq,

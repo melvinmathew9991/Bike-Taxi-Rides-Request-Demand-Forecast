@@ -1,10 +1,10 @@
 # Development dependencies. Install with: pip install -r requirements-dev.txt
--r requirements.txt
+#
+# This is what you want for running the tests: it brings in pytest, which
+# requirements.txt deliberately does not. The README's quick start used to say
+# `pip install -r requirements.txt` and then `pytest`, which left pytest
+# uninstalled.
+#
+# Extras are declared in pyproject.toml under [project.optional-dependencies].
 
-pytest>=7.4,<9.0
-ruff>=0.4,<1.0
-
-# Exploratory notebooks (not needed to run the pipeline or the tests).
-jupyter>=1.0,<2.0
-ipython>=8.0,<10.0
-seaborn>=0.12,<1.0
+-e .[dev,dashboard,plots,notebooks]

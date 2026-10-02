@@ -9,6 +9,49 @@ description = "Demand forecasting for bike-taxi ride requests"
 requires-python = ">=3.10"
 readme = "README.md"
 
+# The real dependency set, previously absent: `pip install .` produced a package
+# that imported nothing, because the pins lived only in requirements.txt where
+# no packaging tool looks for them.
+#
+# Bounds are two-sided. Lower bounds alone (`pandas>=1.3.0`) span several
+# releases with breaking changes, so a fresh install could silently resolve to a
+# version the code was never run against.
+#
+# Verified green on Python 3.10-3.13 in CI against pandas 2.3.3, numpy 2.2-2.5,
+# scikit-learn 1.7-1.9, xgboost 3.2-3.4.
+dependencies = [
+    # pandas 3.0 changes copy-on-write and several groupby/resample defaults.
+    "pandas>=2.0,<3.0",
+    "numpy>=1.24,<3.0",
+    "scikit-learn>=1.3,<2.0",
+    # xgboost 2.0 moved early_stopping_rounds to the constructor; 4.0 may move again.
+    "xgboost>=2.0,<4.0",
+    "joblib>=1.3,<2.0",
+]
+
+[project.optional-dependencies]
+# The dashboard is the only thing that needs a plotting stack at import time.
+dashboard = [
+    "streamlit>=1.30,<2.0",
+    "matplotlib>=3.7,<4.0",
+]
+# ModelEvaluator.plot_residuals imports these lazily, inside the function, so
+# the core package does not require them.
+plots = [
+    "matplotlib>=3.7,<4.0",
+    "scipy>=1.10,<2.0",
+]
+dev = [
+    "pytest>=7.4,<9.0",
+    "ruff>=0.4,<1.0",
+]
+# Historical exploratory notebooks; not needed to run the pipeline or the tests.
+notebooks = [
+    "jupyter>=1.0,<2.0",
+    "ipython>=8.0,<10.0",
+    "seaborn>=0.12,<1.0",
+]
+
 [tool.setuptools]
 package-dir = { "" = "src" }
 

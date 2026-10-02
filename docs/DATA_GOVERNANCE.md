@@ -56,9 +56,24 @@ they cannot memorise an individual's movements.
 
 ### Enforcement in code
 
-- `data_prep_advanced.PERSONAL_DATA_COLUMNS` names the personal fields, warns on
-  every write of booking-level data, and supports `drop_rider_id=True` to omit
-  the identifier from the persisted file.
+- `data_prep_advanced.PERSONAL_DATA_COLUMNS` names the personal fields and warns
+  on every write of booking-level data.
+- **The pipeline passes `drop_rider_id=True`**, so the rider identifier is not
+  written to disk. The cleaning rules need it, and they have finished by that
+  point; nothing downstream reads it, since `data_prep_geospatial` uses only
+  `ts`, `pick_lat` and `pick_lng`.
+
+  Scope, stated precisely: this removes the identifier that makes the coordinate
+  trace attributable to a person — repeated pickups at one pin no longer link to
+  a rider. It does **not** remove the coordinates themselves, which persist in
+  `clean_data_<version>.csv` until the aggregation below removes them. That file
+  remains personal data under § 1 and must be handled accordingly.
+
+  This option existed from the start and was never passed, so until it was
+  switched on, every run wrote 3.7M rows of pseudonymous rider id joined to
+  ~0.1 m pickup and drop coordinates. Data minimisation is a DPDP Act
+  obligation, not a preference, and `tests/test_integration.py`
+  (`TestDataMinimisation`) now holds it.
 - `data_prep_advanced.CLEANED_COLUMNS` is an explicit allow-list, so a new
   upstream column cannot silently start being written to disk.
 - `streamlit_app.assert_no_personal_data()` refuses to render any file
