@@ -123,8 +123,42 @@ def run_pipeline(
     if best:
         logger.info("Best model by test RMSE: %s (%.4f)", best[0], best[1]["metrics"]["test_rmse"])
 
+    # The deploy gate runs inside training; surface its verdict here so a caller
+    # or a CI job can act on it without parsing logs.
+    results["gate"] = _gate_verdict(pipeline.models)
+
     logger.info("Done. Outputs in %s", config.output_dir)
     return results
+
+
+def _gate_verdict(models: dict) -> dict | None:
+    """
+    Collect the baseline-comparison verdict recorded during training.
+
+    Returns None when no model carries one - a stage subset that skipped
+    training, for instance - so "not measured" stays distinguishable from
+    "passed".
+    """
+    for name, bundle in models.items():
+        metrics = getattr(bundle, "metrics", {})
+        if "beats_seasonal_naive" not in metrics:
+            continue
+        passed = bool(metrics["beats_seasonal_naive"])
+        verdict = {
+            "model": name,
+            "passed": passed,
+            "mase": metrics.get("baseline_mase"),
+            "naive_rmse": metrics.get("baseline_naive_rmse"),
+            "clusters_losing_to_naive": metrics.get("clusters_losing_to_naive"),
+        }
+        if not passed:
+            logger.error(
+                "DEPLOY GATE FAILED for %s (MASE %.4f). This model should not be "
+                "promoted; a seasonal-naive baseline is cheaper and better.",
+                name, verdict["mase"],
+            )
+        return verdict
+    return None
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -165,6 +199,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--log-file", default=None)
     parser.add_argument("--log-level", default=None)
+    parser.add_argument(
+        "--allow-failed-gate", action="store_true",
+        help="Exit 0 even if the model loses to the seasonal-naive baseline "
+             "(default: exit 3, so automation can refuse to promote it)",
+    )
     return parser
 
 
@@ -224,7 +263,18 @@ def main() -> int:
         return 2
 
     try:
-        run_pipeline(config=config, full_run=args.stages is None, stages=args.stages)
+        results = run_pipeline(
+            config=config, full_run=args.stages is None, stages=args.stages
+        )
+        gate = results.get("gate")
+        if gate and not gate["passed"] and not args.allow_failed_gate:
+            # A distinct code: the run itself succeeded, the model is not good
+            # enough. Exit 1 would conflate the two.
+            logger.error(
+                "Exiting 3: the trained model does not beat its baseline. Pass "
+                "--allow-failed-gate to override."
+            )
+            return 3
         return 0
     except FileNotFoundError as exc:
         logger.error("%s", exc)
