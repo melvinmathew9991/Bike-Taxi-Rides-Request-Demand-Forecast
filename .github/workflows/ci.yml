@@ -1,0 +1,62 @@
+name: CI
+
+# The repository had no CI until this workflow. Two defects in the command-line
+# layer -- a default path that made the forecasting stage skip on every run, and
+# `--config` discarding every other flag -- shipped through a full audit and a
+# merged pull request without anything checking them.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# A new push to a pull request makes the in-flight run obsolete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      # One red version should not hide the state of the others.
+      fail-fast: false
+      matrix:
+        # The floor and ceiling of `requires-python = ">=3.10"`. Verified green
+        # locally on 3.10.11 and 3.13.14 before this workflow was added, so a
+        # failure here is a real regression rather than an untested claim.
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      # requirements-dev.txt includes requirements.txt, so this exercises the
+      # runtime pins as well. Installing from the pinned files rather than
+      # `pip install -e .` is the point: a bound that resolves to a version the
+      # code was never run against is the failure this catches.
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Report resolved versions
+        run: |
+          python -c "import sys, pandas, numpy, sklearn, xgboost; print(sys.version); print('pandas', pandas.__version__); print('numpy', numpy.__version__); print('scikit-learn', sklearn.__version__); print('xgboost', xgboost.__version__)"
+
+      - name: Lint
+        run: ruff check .
+
+      # No data is fetched or created anywhere above. The suite builds synthetic
+      # data in memory, and this job running on a bare checkout is what holds
+      # the README's "a fresh clone can run pytest immediately" to its word --
+      # a local run can pass off git-ignored files that a clone will not have.
+      - name: Test
+        run: pytest
