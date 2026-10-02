@@ -16,7 +16,7 @@ raw bookings
 
 ```bash
 pip install -r requirements.txt
-pytest                                    # 135 tests, no data needed
+pytest                                    # 149 tests, no data needed
 python run_pipeline.py --raw-data data/raw_data.csv --n-clusters 50
 streamlit run streamlit_app.py            # dashboard over pipeline output
 ```
@@ -42,9 +42,12 @@ python run_pipeline.py                          # full pipeline, defaults
 python run_pipeline.py --stages data features   # subset of stages
 python run_pipeline.py --n-clusters 100 --test-fraction 0.25 --horizon-steps 96
 python run_pipeline.py --config output/pipeline_config_20240101_120000.json
+python run_pipeline.py --config run.json --n-clusters 100   # flag wins
 ```
 
 Every flag reaches the code it names; `run_pipeline.py --help` lists them all.
+`--config` and the flags compose: the snapshot sets the starting point, and any
+flag you pass overrides it (and is logged as an override).
 
 ### Python
 

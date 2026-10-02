@@ -35,7 +35,7 @@ class PipelineConfig:
     project_root: str = ""
     data_dir: str = "data"
     raw_data_path: str = "data/raw_data.csv"
-    test_data_path: str = "data/test_dataset/cleaned_test_booking_data.csv"
+    test_data_path: str = "data/cleaned_test_booking_data.csv"
     output_dir: str = "output"
     logs_dir: str = "logs"
 
