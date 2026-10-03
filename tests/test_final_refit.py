@@ -12,6 +12,7 @@ refitted on everything, and staleness is measured from where its data ends.
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -22,6 +23,10 @@ from ML_Pipeline.config import PipelineConfig
 from ML_Pipeline.features import TS_COL
 from ML_Pipeline.model_training import model_training
 from ML_Pipeline.serving import STALE_AFTER_DAYS, ServingState
+
+#: Absolute, because AppTest resolves a relative path against the calling file
+#: in some streamlit versions and against the working directory in others.
+APP = Path(__file__).resolve().parents[1] / "streamlit_app.py"
 
 
 def _train(panel: pd.DataFrame, tmp_path, *, refit: bool):
@@ -156,7 +161,7 @@ class TestTheDashboardStaysOutOfSample:
         dump(bundle, path)
 
         monkeypatch.setenv("BIKETAXI_OUTPUT_DIR", str(tmp_path))
-        at = AppTest.from_file("streamlit_app.py", default_timeout=120)
+        at = AppTest.from_file(str(APP), default_timeout=120)
         at.run()
         at.sidebar.radio[0].set_value("Model performance").run()
         assert not at.exception
