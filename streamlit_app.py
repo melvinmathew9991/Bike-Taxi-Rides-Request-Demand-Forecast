@@ -34,6 +34,14 @@ from matplotlib.colors import LinearSegmentedColormap
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from ML_Pipeline.config import latest_artifact, latest_version  # noqa: E402
+from ML_Pipeline.evaluation import ModelEvaluator  # noqa: E402
+from ML_Pipeline.features import (  # noqa: E402
+    add_calendar_features,
+    add_lag_features,
+    attach_cluster_centroids,
+)
+from ML_Pipeline.forecast import PREDICTION_COL, backtest_recursive  # noqa: E402
+from ML_Pipeline.serving import STALE_AFTER_DAYS, ServingState  # noqa: E402
 from ML_Pipeline.utils import read_csv_any  # noqa: E402
 
 # --------------------------------------------------------------------------
@@ -92,6 +100,10 @@ GRID_LIGHT = "#e1e0d9"
 GRID_DARK = "#2c2c2a"
 BASELINE_LIGHT = "#c3c2b7"
 BASELINE_DARK = "#383835"
+
+#: Reserved status hue, used only for "this loses to the baseline" and never
+#: as a series colour. Always paired with a label, never meaning alone.
+STATUS_BAD = "#c0372c"
 
 # Sequential blue ramp, light -> dark (steps 100..700 of the reference ramp).
 SEQUENTIAL_BLUE_STEPS = [
@@ -525,6 +537,334 @@ def page_forecasts() -> None:
 
 
 # --------------------------------------------------------------------------
+# Model performance
+# --------------------------------------------------------------------------
+
+#: One week of 30-minute intervals: the seasonal period for the naive baseline.
+SEASON_INTERVALS = 336
+
+
+@st.cache_resource(show_spinner="Loading the promoted model...")
+def load_serving_state() -> ServingState:
+    """
+    The model the API would serve, and the history its lags read from.
+
+    Shared with `ML_Pipeline.api` rather than reimplemented, so the dashboard
+    cannot disagree with production about which model is live.
+    """
+    return ServingState()
+
+
+@st.cache_data(show_spinner="Backtesting the last closed horizon...")
+def backtest_last_horizon(model_name: str, steps: int):
+    """
+    Forecast the most recent `steps` intervals and pair with what happened.
+
+    The forecast files the pipeline writes cover a horizon *after* the observed
+    data ends, so they carry no actuals to compare against - correct for serving,
+    useless for evaluation. The honest view of accuracy is a backtest: hold out
+    the last closed horizon and let the model forecast it recursively, compounding
+    its own errors as it does in production.
+
+    `model_name` is in the signature only so Streamlit invalidates this when the
+    promoted model changes.
+    """
+    state = load_serving_state()
+    if not state.ready:
+        return None
+    try:
+        return backtest_recursive(
+            state.bundle, state.history, horizon_steps=steps,
+            centroids=state.centroids,
+        )
+    except ValueError:
+        return None
+
+
+@st.cache_data(show_spinner="Scoring the recent window...")
+def evaluate_recent_window(model_name: str, weeks: int):
+    """
+    Score one-step predictions over the last `weeks` weeks of observed demand.
+
+    This exists because a seasonal-naive baseline is the value 336 intervals
+    earlier, so MASE can only be computed over a frame that contains those
+    intervals. The recursive backtest below is at most 96 intervals wide, which is
+    why its baseline column came out empty - the comparison needs a wider window,
+    not a different metric.
+
+    One step ahead means true observed lags, which is the optimistic mode. It is
+    also exactly how the deploy gate and `per_cluster_error` are measured during
+    training, so the numbers here are comparable to the verdict in the registry.
+
+    Returns:
+        `(scored_frame, predictions)`, or `(None, None)` if the model cannot be
+        scored on this history.
+    """
+    state = load_serving_state()
+    if not state.ready:
+        return None, None
+
+    bundle = state.bundle
+    # The serving history is a bare [ts, cluster, count] panel, so every feature
+    # the model expects has to be rebuilt here - calendar included. Omitting the
+    # calendar features was silently caught by the KeyError below and surfaced as
+    # "could not score", which hid the real cause.
+    frame = add_lag_features(
+        state.history, lags=bundle.lags, rolling_window=bundle.rolling_window
+    )
+    frame = add_calendar_features(frame, "ts")
+    if state.centroids is not None and "cluster_lat" in bundle.feature_names:
+        frame = attach_cluster_centroids(frame, state.centroids)
+
+    cutoff = frame["ts"].max() - pd.Timedelta(weeks=weeks)
+    window = frame[frame["ts"] >= cutoff].reset_index(drop=True)
+    if len(window) == 0:
+        return None, None
+
+    missing = [c for c in bundle.feature_names if c not in window.columns]
+    if missing:
+        # Named, not swallowed: a feature the serving history cannot rebuild is a
+        # real train/serve mismatch and the operator needs to see which one.
+        st.error(
+            "This model needs feature(s) the demand grid cannot supply: "
+            + ", ".join(missing)
+        )
+        return None, None
+    return window, bundle.predict(window)
+
+
+def _gate_tiles(state: ServingState) -> None:
+    """Headline: is this model fit to serve, and how old is it?"""
+    metrics = state.info.get("metrics", {})
+    beats = metrics.get("beats_seasonal_naive")
+    mase = metrics.get("baseline_mase")
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric(
+        "Deploy gate",
+        "not measured" if beats is None else ("PASS" if bool(beats) else "FAIL"),
+    )
+    col2.metric("MASE vs naive", f"{mase:.3f}" if mase is not None else "n/a")
+    age = state.age_days
+    col3.metric("Model age", f"{age:.0f} days" if age is not None else "unknown")
+    losing = metrics.get("clusters_losing_to_naive")
+    col4.metric(
+        "Clusters losing to naive",
+        f"{int(losing)}" if losing is not None else "n/a",
+    )
+
+    if beats is not None and not bool(beats):
+        st.error(
+            "This model does not beat a seasonal-naive baseline. It should not be "
+            "serving: the baseline is free, interpretable and needs no retraining."
+        )
+    if state.stale:
+        st.warning(
+            f"The model is {age:.0f} days old, past the {STALE_AFTER_DAYS}-day "
+            "retraining cadence. Demand on this dataset grew 5.2x in a year and "
+            "trees cannot extrapolate, so a stale model under-forecasts. The "
+            "measured failure point is six weeks in the worst case."
+        )
+
+
+def page_model_performance() -> None:
+    st.header("Model performance")
+
+    state = load_serving_state()
+    if not state.ready:
+        st.warning("No model is promoted to production, so there is nothing to score.")
+        st.markdown(
+            """
+            Train and promote one:
+
+            ```bash
+            python run_pipeline.py --raw-data data/raw_data.csv --promote
+            ```
+
+            Promotion refuses a model that failed its deploy gate, or that carries
+            no verdict at all, so whatever reaches this page has evidence behind it.
+            """
+        )
+        return
+
+    st.caption(
+        f"Serving `{state.model_name}` - {len(state.bundle.feature_names)} features "
+        f"- lags {list(state.bundle.lags)} - history to "
+        f"{state.history_ends_at:%Y-%m-%d %H:%M}"
+    )
+    _gate_tiles(state)
+
+    steps = st.slider(
+        "Backtest horizon (30-minute intervals)", 24, 96, 48, step=24,
+        help="Recursive backtest over the last closed horizon. Capped at 96 - two "
+             "days - because past that the model's measured advantage over the "
+             "baseline runs out.",
+    )
+    backtest = backtest_last_horizon(state.model_name or "", steps)
+    if backtest is None or len(backtest) == 0:
+        st.error("Could not backtest: not enough history for this model's lags.")
+        return
+
+    actual = backtest["request_count"].to_numpy(dtype="float64")
+    predicted = backtest[PREDICTION_COL].to_numpy(dtype="float64")
+
+    # Job: two series over time -> line chart. Two series, so a legend is present.
+    st.subheader("Forecast against actual, recursively")
+    st.caption(
+        "The last closed horizon, forecast from the model's own predictions - "
+        "the mode the pipeline serves. Accuracy against the baseline is scored "
+        "over a wider window further down, because a same-time-last-week "
+        "baseline needs a week of history to exist."
+    )
+    totals = (
+        backtest.groupby("ts", as_index=False)[["request_count", PREDICTION_COL]]
+        .sum()
+        .sort_values("ts")
+    )
+    fig, ax = plt.subplots(figsize=(12, 4))
+    ax.plot(totals["ts"], totals["request_count"], color=SERIES_BLUE,
+            linewidth=2, label="Actual")
+    ax.plot(totals["ts"], totals[PREDICTION_COL], color=SERIES_ORANGE,
+            linewidth=2, linestyle="--", label="Forecast")
+    ax.set_ylabel("Requests, all clusters")
+    _style_axes(ax)
+    legend = ax.legend(frameon=False, loc="upper left")
+    for text in legend.get_texts():
+        text.set_color(INK_MUTED)
+    fig.autofmt_xdate()
+    st.pyplot(fig)
+    plt.close(fig)
+
+    level_ratio = predicted.mean() / actual.mean() if actual.mean() else float("nan")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Actual over the horizon", f"{actual.sum():,.0f}")
+    col2.metric("Forecast over the horizon", f"{predicted.sum():,.0f}")
+    col3.metric("Level ratio", f"{level_ratio:.2f}")
+    st.caption(
+        "Level ratio is mean forecast over mean actual. It degrades earliest of "
+        "any metric as a model goes stale - 0.92 by week four, while error still "
+        "looks fine - which is why it is the thing to watch."
+    )
+
+    # ---------------- accuracy against the baseline ----------------
+    #
+    # Measured over a wider window than the backtest above, because a
+    # same-time-last-week baseline needs a week of history inside the frame to
+    # exist at all. One step ahead, matching how the deploy gate is measured.
+    st.subheader("Against the baselines it must beat")
+    weeks = st.select_slider(
+        "Scoring window", options=[4, 6, 8, 12], value=8,
+        help="Weeks of observed demand, scored one step ahead. At least 1 week is "
+             "needed for a same-time-last-week baseline to exist; 4+ makes it "
+             "stable.",
+    )
+    window, window_pred = evaluate_recent_window(state.model_name or "", weeks)
+    if window is None:
+        st.error("Could not score the recent window with this model's features.")
+        return
+
+    comparison = ModelEvaluator.compare_to_baselines(
+        window, window_pred, season_length=SEASON_INTERVALS
+    )
+    model_mase = float(comparison.loc["model", "mase"])
+    beats = (
+        "seasonal_naive" in comparison.index
+        and comparison.loc["model", "rmse"] < comparison.loc["seasonal_naive", "rmse"]
+    )
+    if "seasonal_naive" in comparison.index:
+        if beats:
+            st.success(
+                f"Beats the baseline over the last {weeks} weeks: MASE "
+                f"{model_mase:.3f}."
+            )
+        else:
+            st.error(
+                f"Loses to a seasonal-naive baseline over the last {weeks} weeks "
+                f"(MASE {model_mase:.3f}). Ship the baseline instead until it does "
+                "not."
+            )
+    st.dataframe(
+        comparison.rename(
+            index={
+                "model": "This model",
+                "seasonal_naive": "Seasonal naive (same time last week)",
+                "cluster_mean": "Cluster historical mean",
+            }
+        ).style.format(
+            {"rmse": "{:.3f}", "mae": "{:.3f}", "mase": "{:.3f}", "n": "{:,.0f}"}
+        ),
+        use_container_width=True,
+    )
+    st.caption(
+        f"{len(window):,} interval-cluster rows from "
+        f"{window['ts'].min():%Y-%m-%d} to {window['ts'].max():%Y-%m-%d}. "
+        "MASE below 1 beats the baseline; a model that cannot should not ship."
+    )
+
+    # ---------------- error per cluster ----------------
+    #
+    # Job: magnitude across many categories -> sorted bar, one sequential hue, with
+    # a reference line where the meaning changes.
+    st.subheader("Error by cluster")
+    st.caption(
+        "A single global error hides which areas get under-served. This model "
+        "decides where supply goes, so its errors are not evenly consequential."
+    )
+    per_cluster = ModelEvaluator.per_cluster_error(
+        window, window_pred, season_length=SEASON_INTERVALS
+    )
+    scored = per_cluster.dropna(subset=["mase"])
+    if len(scored) == 0:
+        st.info("No cluster has a week of history in this window.")
+        return
+
+    losing = scored[scored["mase"] >= 1.0]
+    if len(losing):
+        st.error(
+            f"{len(losing)} of {len(scored)} clusters lose to the baseline: "
+            + ", ".join(f"#{int(c)}" for c in losing["pickup_cluster"].head(20))
+            + ". Those areas would be systematically under-served."
+        )
+    else:
+        st.success(f"All {len(scored)} clusters beat the seasonal-naive baseline.")
+
+    shown = scored.head(25)
+    fig, ax = plt.subplots(figsize=(12, max(3.2, 0.26 * len(shown))))
+    span = max(float(shown["mase"].max()), 1e-9)
+    colors = [
+        STATUS_BAD if m >= 1.0 else SEQUENTIAL_BLUE(0.30 + 0.6 * (m / span))
+        for m in shown["mase"]
+    ]
+    ax.barh([f"#{int(c)}" for c in shown["pickup_cluster"]], shown["mase"],
+            color=colors, height=0.7)
+    ax.axvline(1.0, color=STATUS_BAD, linestyle="--", linewidth=1.2)
+    ax.annotate("1.0 = baseline", xy=(1.0, len(shown) - 0.5), xytext=(5, 0),
+                textcoords="offset points", color=STATUS_BAD, fontsize=9,
+                va="center")
+    ax.invert_yaxis()
+    ax.set_xlabel("MASE (lower is better)")
+    _style_axes(ax)
+    ax.grid(axis="y", visible=False)
+    st.pyplot(fig)
+    plt.close(fig)
+    st.caption(f"Worst {len(shown)} of {len(scored)} clusters, worst first.")
+
+    st.dataframe(
+        scored.rename(columns={
+            "pickup_cluster": "Cluster", "n": "Intervals",
+            "mean_actual": "Mean actual", "mean_pred": "Mean forecast",
+            "level_ratio": "Level ratio", "rmse": "RMSE", "mae": "MAE",
+            "mase": "MASE",
+        }).style.format({
+            "Intervals": "{:,.0f}", "Mean actual": "{:.2f}",
+            "Mean forecast": "{:.2f}", "Level ratio": "{:.2f}",
+            "RMSE": "{:.3f}", "MAE": "{:.3f}", "MASE": "{:.3f}",
+        }),
+        use_container_width=True, hide_index=True,
+    )
+
+
+# --------------------------------------------------------------------------
 # Entry point
 # --------------------------------------------------------------------------
 
@@ -566,7 +906,8 @@ def main() -> None:
     st.sidebar.header("Navigation")
     page = st.sidebar.radio(
         "Page",
-        ["Overview", "Data quality", "Demand patterns", "Clusters", "Forecasts"],
+        ["Overview", "Model performance", "Data quality", "Demand patterns",
+         "Clusters", "Forecasts"],
         label_visibility="collapsed",
     )
 
@@ -579,6 +920,8 @@ def main() -> None:
 
     if page == "Overview":
         page_overview(df)
+    elif page == "Model performance":
+        page_model_performance()
     elif page == "Data quality":
         page_quality(df)
     elif page == "Demand patterns":

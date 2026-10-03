@@ -38,6 +38,12 @@ ENV/
 *.gz
 *.log
 
+# Local working record. Deliberately not committed: it is a running log of
+# changes, bug fixes and metric movements for whoever is working the repo, not a
+# published artifact. The committed history is in git log; the published numbers
+# are in docs/MODEL_CARD.md.
+WORKLOG.md
+
 # OS files
 .DS_Store
 Thumbs.db
