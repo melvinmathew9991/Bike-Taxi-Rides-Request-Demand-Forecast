@@ -399,6 +399,11 @@ class ModelBundle:
     params: dict[str, Any] = field(default_factory=dict)
     trained_at: str = field(default_factory=lambda: datetime.now().isoformat())
     training_rows: int = 0
+    #: Last timestamp in the data the model was fitted on, ISO format. This, not
+    #: `trained_at`, is what staleness is measured from: a model fitted today on
+    #: data that ends ten weeks ago is ten weeks stale. Empty on bundles saved
+    #: before it existed.
+    data_through: str = ""
     notes: str = ""
 
     def design_matrix(self, df: pd.DataFrame) -> pd.DataFrame:

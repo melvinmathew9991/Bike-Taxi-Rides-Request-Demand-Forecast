@@ -47,7 +47,7 @@ from ML_Pipeline.features import (
 )
 from ML_Pipeline.forecast import PREDICTION_COL, backtest_recursive
 from ML_Pipeline.splitting import chronological_split, train_validation_split
-from ML_Pipeline.xgb_model import train_xgb
+from ML_Pipeline.xgb_model import refit_on_all_data, train_xgb
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +133,7 @@ def model_training(
         freq=config.freq,
         notes=f"Chronological split at {split.split_at}.",
     )
+    bundle_nolag = _finalise(bundle_nolag, panel, split, config)
     bundle_nolag.save(without_lag_model_path)
 
     # ---------------- Model 2: with lag features ----------------
@@ -212,11 +213,38 @@ def model_training(
     # verdict is recorded on the bundle, which puts it in the registry too.
     _run_deploy_gate(bundle_lag, split_lag.test, config)
 
+    # Only now, with every measurement taken on the held-out fit, is the test
+    # window folded in. Refitting earlier would score the model on rows it had
+    # trained on.
+    bundle_lag = _finalise(bundle_lag, lagged, split_lag, config)
     bundle_lag.save(with_lag_model_path)
 
     logger.info("Total training time: %s", datetime.now() - started)
     _log_comparison(bundle_nolag, bundle_lag)
     return {"without_lag": bundle_nolag, "with_lag": bundle_lag}
+
+
+def _finalise(
+    bundle: ModelBundle, frame: pd.DataFrame, split: Any, config: Any
+) -> ModelBundle:
+    """
+    The bundle to persist: refit on all of `frame`, or kept as scored.
+
+    Either way it records `data_through`, the end of the data it was fitted on,
+    which is what serving measures staleness from.
+    """
+    if getattr(config, "refit_on_all_data", True):
+        return refit_on_all_data(
+            bundle, frame, frame[TARGET_COL],
+            data_through=frame[TS_COL].max().isoformat(),
+        )
+    bundle.data_through = split.train[TS_COL].max().isoformat()
+    logger.warning(
+        "refit_on_all_data is off: the saved model has not seen the test window "
+        "and is already stale by %s on the day it is trained.",
+        frame[TS_COL].max() - split.train[TS_COL].max(),
+    )
+    return bundle
 
 
 def _season_length(config: Any) -> int:

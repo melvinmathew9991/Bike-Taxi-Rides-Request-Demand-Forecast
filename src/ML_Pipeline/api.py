@@ -65,9 +65,18 @@ class ForecastResponse(BaseModel):
     horizon_steps: int
     model_trained_at: datetime | None = None
     model_age_days: float | None = None
+    model_data_through: datetime | None = Field(
+        default=None, description="End of the data the model was fitted on."
+    )
+    data_lag_days: float | None = Field(
+        default=None,
+        description="Days of observed history the model has not been fitted on.",
+    )
     stale: bool = Field(
         description=f"True when the model is older than {STALE_AFTER_DAYS} days, "
-        "past which it has been measured to lose to a seasonal-naive baseline."
+        f"or its training data ends more than {STALE_AFTER_DAYS} days before the "
+        "history does - past which it has been measured to lose to a "
+        "seasonal-naive baseline."
     )
     warnings: list[str] = []
     forecast: list[ForecastPoint]
@@ -78,6 +87,8 @@ class ModelInfoResponse(BaseModel):
     stage: str
     trained_at: datetime | None = None
     model_age_days: float | None = None
+    data_through: datetime | None = None
+    data_lag_days: float | None = None
     stale: bool
     features: list[str]
     lags: list[int]
@@ -129,6 +140,8 @@ def model_info() -> ModelInfoResponse:
         stage=state.info.get("stage", "unknown"),
         trained_at=state.trained_at,
         model_age_days=state.age_days,
+        data_through=state.data_through,
+        data_lag_days=state.data_lag_days,
         stale=state.stale,
         features=list(state.bundle.feature_names),
         lags=[int(x) for x in state.bundle.lags],
@@ -217,13 +230,9 @@ def forecast(
     predicted = predicted[predicted[CLUSTER_COL].isin(requested)]
 
     warnings: list[str] = []
-    if state.stale:
-        warnings.append(
-            f"The serving model is {state.age_days:.0f} days old, past the "
-            f"{STALE_AFTER_DAYS}-day retraining cadence. Demand on this dataset "
-            "grew 5.2x in a year and trees cannot extrapolate, so a stale model "
-            "under-forecasts. Retrain."
-        )
+    staleness = state.staleness_warning()
+    if staleness:
+        warnings.append(staleness)
     if steps > 48:
         warnings.append(
             f"A {steps}-step horizon reaches past one day, where the daily lag "
@@ -237,6 +246,8 @@ def forecast(
         horizon_steps=steps,
         model_trained_at=state.trained_at,
         model_age_days=state.age_days,
+        model_data_through=state.data_through,
+        data_lag_days=state.data_lag_days,
         stale=state.stale,
         warnings=warnings,
         forecast=[

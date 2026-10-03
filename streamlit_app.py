@@ -41,7 +41,7 @@ from ML_Pipeline.features import (  # noqa: E402
     attach_cluster_centroids,
 )
 from ML_Pipeline.forecast import PREDICTION_COL, backtest_recursive  # noqa: E402
-from ML_Pipeline.serving import STALE_AFTER_DAYS, ServingState  # noqa: E402
+from ML_Pipeline.serving import ServingState  # noqa: E402
 from ML_Pipeline.utils import read_csv_any  # noqa: E402
 
 # --------------------------------------------------------------------------
@@ -617,7 +617,12 @@ def evaluate_recent_window(model_name: str, weeks: int):
         frame = attach_cluster_centroids(frame, state.centroids)
 
     cutoff = frame["ts"].max() - pd.Timedelta(weeks=weeks)
-    window = frame[frame["ts"] >= cutoff].reset_index(drop=True)
+    window = frame[frame["ts"] >= cutoff]
+    # Only demand the model has not been fitted on. A model refit on all data
+    # has seen every row of this window, and scoring it there is in-sample.
+    if state.data_through is not None:
+        window = window[window["ts"] > state.data_through]
+    window = window.reset_index(drop=True)
     if len(window) == 0:
         return None, None
 
@@ -645,8 +650,17 @@ def _gate_tiles(state: ServingState) -> None:
         "not measured" if beats is None else ("PASS" if bool(beats) else "FAIL"),
     )
     col2.metric("MASE vs naive", f"{mase:.3f}" if mase is not None else "n/a")
-    age = state.age_days
-    col3.metric("Model age", f"{age:.0f} days" if age is not None else "unknown")
+    # Data lag, not wall-clock age. The model promoted on 2026-10-02 showed
+    # "0 days" here while its training data ended ten weeks before the history
+    # did - and that gap, not the calendar, is what made it lose on cluster 30.
+    lag, age = state.data_lag_days, state.age_days
+    col3.metric(
+        "Data lag",
+        f"{lag:.0f} days" if lag is not None else "unknown",
+        help="Days of observed demand the model was not fitted on. Staleness is "
+             "measured from this; the training run itself was "
+             + (f"{age:.0f} days ago." if age is not None else "at an unknown time."),
+    )
     losing = metrics.get("clusters_losing_to_naive")
     col4.metric(
         "Clusters losing to naive",
@@ -658,48 +672,28 @@ def _gate_tiles(state: ServingState) -> None:
             "This model does not beat a seasonal-naive baseline. It should not be "
             "serving: the baseline is free, interpretable and needs no retraining."
         )
-    if state.stale:
+    staleness = state.staleness_warning()
+    if staleness:
         st.warning(
-            f"The model is {age:.0f} days old, past the {STALE_AFTER_DAYS}-day "
-            "retraining cadence. Demand on this dataset grew 5.2x in a year and "
-            "trees cannot extrapolate, so a stale model under-forecasts. The "
-            "measured failure point is six weeks in the worst case."
+            f"{staleness} The measured failure point is six weeks in the worst case."
         )
 
 
-def page_model_performance() -> None:
-    st.header("Model performance")
-
-    state = load_serving_state()
-    if not state.ready:
-        st.warning("No model is promoted to production, so there is nothing to score.")
-        st.markdown(
-            """
-            Train and promote one:
-
-            ```bash
-            python run_pipeline.py --raw-data data/raw_data.csv --promote
-            ```
-
-            Promotion refuses a model that failed its deploy gate, or that carries
-            no verdict at all, so whatever reaches this page has evidence behind it.
-            """
-        )
-        return
-
-    st.caption(
-        f"Serving `{state.model_name}` - {len(state.bundle.feature_names)} features "
-        f"- lags {list(state.bundle.lags)} - history to "
-        f"{state.history_ends_at:%Y-%m-%d %H:%M}"
-    )
-    _gate_tiles(state)
-
+def _render_backtest(state: ServingState, lag_days: float | None) -> None:
+    """Recursive backtest of the last closed horizon, if the model has not seen it."""
     steps = st.slider(
         "Backtest horizon (30-minute intervals)", 24, 96, 48, step=24,
         help="Recursive backtest over the last closed horizon. Capped at 96 - two "
              "days - because past that the model's measured advantage over the "
              "baseline runs out.",
     )
+    if lag_days is not None and steps / 48 > lag_days:
+        st.info(
+            f"A {steps}-interval backtest reaches back before "
+            f"{state.data_through:%Y-%m-%d %H:%M}, into data this model was fitted "
+            "on. Shorten the horizon, or wait for more new demand."
+        )
+        return
     backtest = backtest_last_horizon(state.model_name or "", steps)
     if backtest is None or len(backtest) == 0:
         st.error("Could not backtest: not enough history for this model's lags.")
@@ -746,6 +740,49 @@ def page_model_performance() -> None:
         "looks fine - which is why it is the thing to watch."
     )
 
+
+def page_model_performance() -> None:
+    st.header("Model performance")
+
+    state = load_serving_state()
+    if not state.ready:
+        st.warning("No model is promoted to production, so there is nothing to score.")
+        st.markdown(
+            """
+            Train and promote one:
+
+            ```bash
+            python run_pipeline.py --raw-data data/raw_data.csv --promote
+            ```
+
+            Promotion refuses a model that failed its deploy gate, or that carries
+            no verdict at all, so whatever reaches this page has evidence behind it.
+            """
+        )
+        return
+
+    st.caption(
+        f"Serving `{state.model_name}` - {len(state.bundle.feature_names)} features "
+        f"- lags {list(state.bundle.lags)} - history to "
+        f"{state.history_ends_at:%Y-%m-%d %H:%M}"
+    )
+    _gate_tiles(state)
+
+    lag = state.data_lag_days
+    if lag is not None and lag < 7:
+        st.info(
+            f"The serving model was fitted on all observed demand through "
+            f"{state.data_through:%Y-%m-%d %H:%M}, so only {lag:.1f} days of "
+            "demand exist that it has not seen. Scoring it on data it was trained "
+            "on would flatter it, so the backtest and baseline comparison appear "
+            "once a week of new demand has arrived. Until then, the deploy gate "
+            "above is the out-of-sample measurement: it was taken on a held-out "
+            "fit of the same model before the final refit."
+        )
+        return
+
+    _render_backtest(state, lag)
+
     # ---------------- accuracy against the baseline ----------------
     #
     # Measured over a wider window than the backtest above, because a
@@ -762,6 +799,13 @@ def page_model_performance() -> None:
     if window is None:
         st.error("Could not score the recent window with this model's features.")
         return
+    # The window stops at the model's training data, so it can be shorter than
+    # the slider says. Name the span actually scored.
+    span_days = (window["ts"].max() - window["ts"].min()) / pd.Timedelta(days=1)
+    over = (
+        f"the last {weeks} weeks" if span_days >= weeks * 7 - 1
+        else f"the {span_days:.0f} days since the model's training data ends"
+    )
 
     comparison = ModelEvaluator.compare_to_baselines(
         window, window_pred, season_length=SEASON_INTERVALS
@@ -774,12 +818,12 @@ def page_model_performance() -> None:
     if "seasonal_naive" in comparison.index:
         if beats:
             st.success(
-                f"Beats the baseline over the last {weeks} weeks: MASE "
+                f"Beats the baseline over {over}: MASE "
                 f"{model_mase:.3f}."
             )
         else:
             st.error(
-                f"Loses to a seasonal-naive baseline over the last {weeks} weeks "
+                f"Loses to a seasonal-naive baseline over {over} "
                 f"(MASE {model_mase:.3f}). Ship the baseline instead until it does "
                 "not."
             )
