@@ -346,6 +346,58 @@ actual demand.
 > as a bound it was right; as a typical case it was pessimistic. The experiment is
 > now a script.
 
+### The promoted model was stale on the day it was trained
+
+Found on 2026-10-03 by the dashboard's per-cluster view, which showed cluster 30
+— the busiest, mean 25.8 requests per interval — losing to seasonal-naive over
+the last eight weeks (MASE 1.003) while the deploy gate had reported 0 of 50
+clusters losing.
+
+**Cause: the model the pipeline saved was the one it scored.** Early stopping's
+validation tail was folded back in, but the test window — the newest fifth of
+the timeline — never was. Every model this pipeline has promoted was therefore
+fitted on data ending at the chronological split: 2021-01-14, against history
+running to 2021-03-26. **Ten weeks stale the day it was trained**, past the
+six-week worst case in the table above. The four-week cadence could not have
+helped; each retrain started ten weeks behind. The dashboard tile read "model
+age: 0 days" throughout, because it measured the wall clock.
+
+**Where it showed: the busiest cluster's evening peak.** The model beat the
+baseline at every hour except 18:00–20:00, where actual demand averaged 66–78
+and the model predicted 51–52. Cluster 30's demand doubled between December and
+March; the model had never seen a count above 73 in that cluster and, across all
+clusters, never predicts above about 67. Over the last eight weeks 6.3% of the
+cluster's intervals exceeded its training maximum.
+
+Measured by `scripts/measure_peak_error.py`, walking forward a week at a time over
+the last eight weeks, one step ahead:
+
+| strategy | MASE | clusters losing | cluster 30 MASE | peak level ratio | level ratio above training max | max prediction |
+|---|---|---|---|---|---|---|
+| frozen at the split (what was promoted) | 0.807 | 1 | **1.011** | 0.73 | 0.63 | 67 |
+| level target, refitted weekly | 0.782 | 0 | **0.789** | 0.93 | 0.87 | 106 |
+| ratio target over `rolling_mean`, weekly | 0.772 | 0 | 0.779 | 0.97 | 0.92 | 116 |
+| ratio target over `lag_336`, weekly | 0.785 | 0 | 0.820 | 0.99 | 0.94 | 147 |
+
+Peak hours are the busiest cluster's three busiest; "above training max" is the
+170 intervals where it exceeded anything the frozen model was fitted on.
+
+**Staleness was the cause, not the feature set.** Refitting weekly with nothing
+else changed takes cluster 30 from 1.011 to 0.789 and clears every cluster. The
+ratio targets add a little at the peak, discussed under the ratio target below.
+
+**Fix.** Training now ends with a final refit on all data, at the tree count
+early stopping chose (`PipelineConfig.refit_on_all_data`, on by default). Every
+metric, the deploy gate included, still comes from the held-out fit — there is
+nothing left to score the final model on, so the method is what is evaluated.
+The bundle records `data_through`, and serving measures staleness as the gap
+between that and the end of the observed history (`data_lag_days`), reported by
+the API and the dashboard. Bundles saved before the fix recover `data_through`
+from their split note, so the model promoted before this change now reports as
+72 days stale, which it was. The dashboard scores only demand after
+`data_through`, so a freshly refit model shows no accuracy figures until a week
+of new demand has arrived, rather than in-sample ones.
+
 ### Deployment verdict
 
 **Usable.** The model clears its own deploy gate on the single chronological
@@ -359,7 +411,9 @@ Before the seasonal lags it did **not** clear the gate: MASE 0.999 with
 
 Conditions for use:
 
-1. **Retrain at least every four weeks.** Now measured on the current lag set
+1. **Retrain at least every four weeks.** Achievable only since 2026-10-03:
+   before the final refit every model started ten weeks behind its data — see
+   the section above. Now measured on the current lag set
    across three origins, not carried over. The weekly lag improved mean decay a
    great deal — MASE 0.88 at six weeks against 1.23 before — but the worst origin
    still loses to seasonal-naive at **week six**, and a cadence follows the worst
@@ -379,9 +433,9 @@ Conditions for use:
    over 90 minutes.
 5. **Do not use the without-lag model for anything but cold starts.** It has no
    channel carrying current demand level and loses to naive by 75%.
-6. **Run the baseline comparison at every retrain.** It is not yet wired into
-   the pipeline, so it has to be run deliberately. If the model stops beating
-   seasonal-naive, ship the baseline.
+6. **Run the baseline comparison at every retrain.** It runs as the deploy gate
+   at the end of every training pass, and `run_pipeline.py` exits 3 when the
+   model loses. If the model stops beating seasonal-naive, ship the baseline.
 
 > An earlier revision of this card concluded "NOT READY / not deployable", based
 > on a single split whose test window ran up to ten weeks past the training cut.
@@ -405,6 +459,16 @@ extrapolate a trend; the ratio target removed the trend from the target, and
 `lag_336` instead hands the model the current level directly as a feature. Having
 done the second, there is nothing left for the first to fix. The level target's
 recursive level ratio is 0.94 without it, against 0.80 before.
+
+**At the very top of the range it still helps a little.** Over the last eight
+weeks, refitted weekly, the ratio target holds the busiest cluster's evening peak
+at a level ratio of 0.97 against the level target's 0.93, and 0.92 against 0.87
+on intervals above anything in the training data — see the stale-model section
+above. A tree's prediction is bounded by its leaves, and `lag_336` cannot carry a
+level the trees were never fitted on. That is one eight-week window and a
+0.010 MASE gain overall, which is no stronger evidence than the sweep's, so the
+target is unchanged. It is the first thing to re-test if peak under-forecasting
+persists with the final refit in place.
 
 Worth keeping in mind rather than discarding: if the lag set ever loses its weekly
 component — a coarser interval, a shorter history requirement — the ratio target
@@ -473,6 +537,12 @@ as a record of the original work.
    `tests/test_cleaning_rules.py` but not validated against ground truth, which
    would need labelled data about which requests became trips.
 
+9. **Peaks above the training range are under-forecast.** Trees cannot
+   predict beyond the values they were fitted on. On a growing series the
+   busiest clusters' peaks keep exceeding that range: refitted weekly, the model
+   forecasts 0.87 of actual demand on intervals above anything it has seen. The
+   final refit narrows the gap but cannot close it; see the ratio target section.
+
 ## Ethical considerations
 
 See `docs/DATA_GOVERNANCE.md` § 4 for feedback loops, geographic equity,
@@ -484,7 +554,11 @@ consequences, and under-served areas are structurally the most exposed.
 
 - **Retrain** when demand patterns shift materially, and at minimum when the
   recursive backtest RMSE degrades against the recorded baseline.
-- **Monitor** forecast error per cluster, not just globally.
+- **Monitor** forecast error per cluster, not just globally. The global number
+  hid cluster 30 losing to the baseline; the per-cluster view found it.
+- **Measure staleness from the data, not the calendar.** `data_lag_days` — the
+  history the model has not been fitted on — is what the decay curve is measured
+  in. Wall-clock age reads zero for a model fitted today on old data.
 - **Compare to the seasonal-naive baseline at every retrain.** If the model
   stops beating it, ship the baseline.
 - Every trained model is recorded in `output/model_registry.json` with its
@@ -494,6 +568,6 @@ consequences, and under-served areas are structurally the most exposed.
   refuses a model that failed its deploy gate *or* that carries no verdict, and
   `rollback()` restores the previously promoted one. `run_pipeline.py --promote`
   does it as part of a training run.
-- **The API caps the horizon at 96 intervals (two days)** and reports model age
-  against the four-week cadence, so the two conditions of use above are enforced
+- **The API caps the horizon at 96 intervals (two days)** and reports data lag
+  and model age against the four-week cadence, so the two conditions of use above are enforced
   at the serving boundary rather than left to the caller.

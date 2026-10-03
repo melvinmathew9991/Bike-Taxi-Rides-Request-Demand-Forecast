@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -33,6 +34,10 @@ MAX_HORIZON_STEPS = 96
 
 #: Retrain cadence from the model card. Past this the model is reported stale.
 STALE_AFTER_DAYS = 28
+
+#: Bundles saved before `data_through` existed were fitted on everything before
+#: their chronological split, and say so in their notes.
+_SPLIT_NOTE = re.compile(r"Chronological split at ([0-9T:\- ]+)\.")
 
 
 class ServingState:
@@ -139,9 +144,65 @@ class ServingState:
         return None if trained is None else (datetime.now() - trained).days * 1.0
 
     @property
+    def data_through(self) -> pd.Timestamp | None:
+        """
+        End of the data the model was fitted on.
+
+        Recorded on the bundle since the final refit was added. For older bundles
+        it is recovered from the split recorded in their notes: they were fitted
+        on everything before it.
+        """
+        raw = (self.bundle.data_through if self.bundle else "") or self.info.get(
+            "metadata", {}
+        ).get("data_through")
+        if not raw and self.bundle is not None:
+            match = _SPLIT_NOTE.search(self.bundle.notes or "")
+            raw = match.group(1) if match else None
+        try:
+            return pd.Timestamp(raw) if raw else None
+        except (TypeError, ValueError):
+            return None
+
+    @property
+    def data_lag_days(self) -> float | None:
+        """
+        How far the history runs past the model's training data, in days.
+
+        This is staleness as the model experiences it, and the measure the model
+        card's decay curve is in. Wall-clock age misses it entirely: the model
+        promoted on 2026-10-02 was zero days old and ten weeks behind its data,
+        and lost to seasonal-naive on the busiest cluster.
+        """
+        through, ends = self.data_through, self.history_ends_at
+        if through is None or ends is None:
+            return None
+        return max((ends - through).total_seconds() / 86400.0, 0.0)
+
+    @property
     def stale(self) -> bool:
-        age = self.age_days
-        return bool(age is not None and age > STALE_AFTER_DAYS)
+        return any(
+            days is not None and days > STALE_AFTER_DAYS
+            for days in (self.age_days, self.data_lag_days)
+        )
+
+    def staleness_warning(self) -> str | None:
+        """One message for every surface that reports staleness, or None."""
+        if not self.stale:
+            return None
+        lag, age = self.data_lag_days, self.age_days
+        if lag is not None and lag > STALE_AFTER_DAYS:
+            what = (
+                f"The serving model's training data ends {lag:.0f} days before "
+                "the latest observed demand"
+            )
+        else:
+            what = f"The serving model is {age:.0f} days old"
+        return (
+            f"{what}, past the {STALE_AFTER_DAYS}-day retraining cadence. Demand "
+            "on this dataset grew 5.2x in a year and trees cannot extrapolate, so "
+            "a stale model under-forecasts - worst at the busiest clusters' peaks. "
+            "Retrain."
+        )
 
     @property
     def history_ends_at(self) -> pd.Timestamp | None:

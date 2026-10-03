@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any
 
 import numpy as np
@@ -164,6 +165,55 @@ def train_xgb(
         _fmt(metrics.get("test_r2")),
     )
     return bundle
+
+
+def refit_on_all_data(
+    bundle: ModelBundle, X: pd.DataFrame, y: pd.Series, *, data_through: str
+) -> ModelBundle:
+    """
+    Refit a scored bundle on every row, at the tree count it already chose.
+
+    `train_xgb` folds the validation tail back in, but the test window is still
+    held out, and the test window is the most recent 20% of the timeline. A model
+    saved straight after scoring has therefore never seen its newest ~10 weeks of
+    data. On the reference dataset that left the promoted model 10 weeks stale on
+    the day it was trained - past the measured six-week worst-case failure point -
+    and it lost to seasonal-naive on the busiest cluster, under-forecasting the
+    evening peak at 0.74 of actual demand because it had never seen counts that
+    high. Retrained weekly, the same feature set scored MASE 0.789 there.
+
+    Evaluation is not repeated. Every metric on the bundle, including the deploy
+    gate verdict, describes the held-out model and stays an honest out-of-sample
+    measurement of the method; the returned model is that method fitted on all
+    the data. That is the standard final step, and the only one that can be
+    honest: once the test window is in the fit, nothing is left to score it on.
+
+    Args:
+        bundle: A bundle returned by `train_xgb`, already scored.
+        X, y: Every row available, test window included.
+        data_through: Last timestamp in `X`, recorded on the bundle.
+
+    Returns:
+        A new bundle with the refitted model and the original metrics, plus
+        `final_fit_rows`.
+    """
+    trees = int(
+        bundle.metrics.get("selected_n_estimators") or bundle.params["n_estimators"]
+    )
+    model = xgb.XGBRegressor(**{**bundle.params, "n_estimators": trees})
+    model.fit(bundle.design_matrix(X), y, verbose=False)
+    logger.info(
+        "Refitted on all data (%d rows, through %s) at %d trees. Metrics are "
+        "from the held-out fit.", len(X), data_through, trees,
+    )
+    return replace(
+        bundle,
+        model=model,
+        metrics={**bundle.metrics, "final_fit_rows": float(len(X))},
+        training_rows=len(X),
+        data_through=data_through,
+        notes=f"{bundle.notes} Refit on all data through {data_through}.".strip(),
+    )
 
 
 def _fmt(value: float | None) -> str:

@@ -117,6 +117,7 @@ def run_pipeline(
                 "uses_lags": bundle.uses_lags,
                 "training_rows": bundle.training_rows,
                 "trained_at": bundle.trained_at,
+                "data_through": bundle.data_through,
                 "notes": bundle.notes,
             },
         )

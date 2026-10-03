@@ -134,6 +134,13 @@ class PipelineConfig:
     test_fraction: float = 0.2
     #: Fraction of the *training* span reserved for early-stopping validation.
     validation_fraction: float = 0.1
+    #: After scoring, refit the saved models on every row, test window included.
+    #: The test window is the newest fifth of the timeline, so without this the
+    #: promoted model starts its life that far behind the data - ten weeks on the
+    #: reference dataset, past the six-week point where a stale model was
+    #: measured to lose to seasonal-naive. Metrics and the deploy gate always
+    #: come from the held-out fit. Off only to reproduce older runs.
+    refit_on_all_data: bool = True
 
     # --- Features --------------------------------------------------------
     #: Lags in intervals. At 30 minutes: 1/2/3 are the last 90 minutes, 48 is
@@ -305,8 +312,8 @@ class PipelineConfig:
         logger.info(
             "Effective configuration: n_clusters=%d (%s), freq=%s, "
             "centroid_features=%s, lags=%s, rolling_window=%d, "
-            "test_fraction=%.2f, objective=%s, n_estimators=%s, "
-            "early_stopping_rounds=%d",
+            "test_fraction=%.2f, refit_on_all_data=%s, objective=%s, "
+            "n_estimators=%s, early_stopping_rounds=%d",
             self.n_clusters,
             self.clustering_algorithm,
             self.freq,
@@ -314,6 +321,7 @@ class PipelineConfig:
             self.lag_features,
             self.rolling_window,
             self.test_fraction,
+            self.refit_on_all_data,
             self.xgb_params.get("objective"),
             self.xgb_params.get("n_estimators"),
             self.early_stopping_rounds,

@@ -16,7 +16,7 @@ raw bookings
 
 ```bash
 pip install -r requirements-dev.txt        # or requirements.txt to run, not test
-pytest                                    # 260 tests, no data needed
+pytest                                    # 273 tests, no data needed
 python run_pipeline.py --raw-data data/raw_data.csv --n-clusters 50
 streamlit run streamlit_app.py            # dashboard, incl. model performance
 ```
@@ -77,16 +77,18 @@ uvicorn ML_Pipeline.api:app --reload                            # serve
 ```
 
 The dashboard's **Model performance** page scores the promoted model: the deploy
-gate verdict and model age, a recursive backtest of the last closed horizon against
+gate verdict and data lag, a recursive backtest of the last closed horizon against
 what actually happened, MASE against the seasonal-naive baseline, and error per
-cluster with the clusters that lose to the baseline called out by name. It shares
+cluster with the clusters that lose to the baseline called out by name. It scores
+only demand the model was not fitted on, so a freshly refit model shows no
+accuracy figures until a week of new demand has arrived. It shares
 `ML_Pipeline.serving` with the API, so the two cannot disagree about which model is
 live.
 
 | Endpoint | Returns |
 |---|---|
 | `GET /health` | liveness, and whether a model **and its history** actually loaded |
-| `GET /model` | what is serving: features, lags, gate verdict, age, staleness |
+| `GET /model` | what is serving: features, lags, gate verdict, data lag, age, staleness |
 | `GET /clusters` | the clusters this model can forecast for |
 | `GET /forecast?steps=48&cluster=7` | demand per cluster per interval, forward from the last observation |
 
@@ -103,7 +105,9 @@ rather than a preference:
   response.
 - **Every response says where its history ends** and whether the model is stale,
   because a recursive forecast's origin is the last observed interval and a model
-  older than the four-week cadence under-forecasts.
+  more than four weeks behind its data under-forecasts. Staleness is measured
+  from where the model's training data ends (`data_lag_days`), not from when it
+  was trained.
 
 A container is provided but **has not been build-verified** — see the note at the
 top of the `Dockerfile`.
@@ -145,6 +149,7 @@ streamlit_app.py          dashboard
 scripts/smoke_run.py      manual full run against real data
 scripts/compare_strategies.py  rolling-origin strategy sweep
 scripts/measure_staleness.py   model decay by weeks since training
+scripts/measure_peak_error.py  stale vs refitted model at the busiest cluster's peak
 tests/                    pytest suite (synthetic data only)
 Notebook/                 original exploratory notebooks (historical record)
 ```
@@ -214,6 +219,11 @@ last week" should not ship.
 > freeze origins: the weekly lag improved mean decay a great deal, but the worst
 > origin still loses to the baseline by week six, and a cadence follows the worst
 > case. Reproduce with `scripts/measure_staleness.py`.
+>
+> Until 2026-10-03 no model could meet that cadence: the saved model was the
+> scored one, which never saw the test window, so every model started ten weeks
+> behind its data. Training now ends with a refit on all data. See "The promoted
+> model was stale on the day it was trained" in the model card.
 >
 > The gate runs at the end of every training pass, records its verdict in the
 > model registry, and `run_pipeline.py` exits **3** when the model loses, so
