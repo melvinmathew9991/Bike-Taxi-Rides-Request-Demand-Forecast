@@ -537,12 +537,38 @@ as a record of the original work.
 1. **Variance explained is now 0.88 (one step), not under half.** The earlier
    figure of R² 0.39 was the without-lag model; the lag model reached 0.81 and,
    with the seasonal lags, 0.88. Substantial variation remains driven by factors
-   absent from the features: weather, events, holidays, pricing, competitor
-   supply, rider availability.
-2. **No exogenous features.** Weather and a holiday calendar are the obvious
-   first additions and are likely worth more than any further tuning. For a
-   two-wheeler service in a monsoon city, rainfall is plausibly the largest
-   single driver of demand variance still unrepresented.
+   absent from the features: events, pricing, competitor supply, rider
+   availability. Weather and holidays were measured and add nothing (item 2).
+2. **No exogenous features, and weather would not help.** This card used to
+   expect rainfall to be the largest missing driver. Measured on 2026-10-05 with
+   `scripts/measure_weather.py`, it is not. Ten one-week folds from June 2020 to
+   March 2021, chosen to cover the monsoon, scored one step ahead:
+
+   | variant | MASE | vs base | better in | MASE, rainy intervals |
+   |---|---|---|---|---|
+   | base (shipped) | 0.7764 | — | — | 0.7638 |
+   | + rain last 1h and 3h, temperature, humidity | 0.7782 | +0.0018 | 1/10 | 0.7632 |
+   | + rain during the interval (perfect hindsight) | 0.7777 | +0.0013 | 2/10 | 0.7641 |
+   | + Karnataka holiday flag | 0.7765 | +0.0001 | 4/10 | 0.7638 |
+
+   Every difference is an order of magnitude inside the fold-to-fold standard
+   deviation (0.014). The hindsight variant is the most weather could add, so a
+   real weather forecast could only do worse. The reason is that demand barely
+   responds: daytime city demand against the same slot a week earlier, when
+   that slot was dry, has a median of 1.037 in dry intervals and 1.023 in rain
+   of 3 mm or more. The base model already forecasts rainy intervals at a level
+   ratio of 1.02.
+
+   Holidays show a dip - median daily demand 0.95 of the week before, against
+   1.03 on ordinary days - but it is inconsistent (0.73 at Dussehra, 1.45 at
+   Buddha Purnima, the April 2020 ones under lockdown), only two fell in the
+   test folds, and there are about 19 a year. Not worth a feature yet.
+
+   Caveats: one weather point (12.97 N, 77.59 E, Open-Meteo reanalysis) stands
+   in for the whole city, so local showers are averaged away; and only the
+   one-step mode was tested, though with demand this unresponsive to rain a
+   longer horizon has nothing to gain either. Weather data is fetched by
+   `scripts/fetch_weather.py` into the git-ignored `data/`.
 3. **Recursive serving needs 7 days of contiguous history per cluster.** A
    consequence of the weekly lag. Gaps are filled with zero and a warning, which
    is more consequential over a week than over the 90 minutes it used to be.
