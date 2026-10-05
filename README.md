@@ -144,12 +144,14 @@ src/ML_Pipeline/
   evaluation.py           metrics, baselines, prediction validation
   clustering.py           offline cluster-count diagnostics
   api.py                  forecast serving API (FastAPI)
+  monitoring.py           health checks on the serving model
 run_pipeline.py           CLI entry point
 streamlit_app.py          dashboard
 scripts/smoke_run.py      manual full run against real data
 scripts/compare_strategies.py  rolling-origin strategy sweep
 scripts/measure_staleness.py   model decay by weeks since training
 scripts/measure_peak_error.py  stale vs refitted model at the busiest cluster's peak
+scripts/monitor_model.py       scheduled health check on the serving model
 tests/                    pytest suite (synthetic data only)
 Notebook/                 original exploratory notebooks (historical record)
 ```
