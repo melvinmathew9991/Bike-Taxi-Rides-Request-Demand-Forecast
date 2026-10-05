@@ -181,8 +181,9 @@ grid rather than from the test file.
 The gain is also horizon-dependent. Within a 48-step horizon the new lags are
 always real observations; past that they start consuming the model's own
 predictions. Measured MASE against seasonal-naive: **0.79 at one day, 0.82 at
-two, 0.89 at four, 0.99 at one week, 1.06 at two**. So keep `--horizon-steps` at
-or below ~96; beyond a week the model only ties a baseline that costs nothing.
+two, 0.89 at four, 0.99 at one week, 1.06 at two**. So `--horizon-steps` is
+capped at 96, two days, and a larger value is refused; beyond a week the model
+only ties a baseline that costs nothing.
 See [docs/MODEL_CARD.md](docs/MODEL_CARD.md) for the table.
 
 Across five rolling origins on the current lag set, every strategy tried beats

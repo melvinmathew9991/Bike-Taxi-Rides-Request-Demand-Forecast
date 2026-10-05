@@ -86,11 +86,31 @@ class TestPipelineConfig:
             ({"lag_features": (0, 1)}, "lag_features"),
             ({"rolling_window": 0}, "rolling_window"),
             ({"clustering_algorithm": "dbscan"}, "clustering_algorithm"),
+            ({"horizon_steps": 0}, "horizon_steps"),
+            ({"horizon_steps": 97}, "horizon_steps"),
+            ({"horizon_steps": 49, "interval_minutes": 60}, "horizon_steps"),
         ],
     )
     def test_invalid_settings_fail_fast(self, tmp_path, kwargs, message):
         with pytest.raises(ValueError, match=message):
             PipelineConfig(output_dir=str(tmp_path), logs_dir=str(tmp_path), **kwargs)
+
+    @pytest.mark.parametrize(
+        "interval_minutes, steps", [(30, 96), (60, 48), (15, 192)]
+    )
+    def test_the_horizon_limit_is_two_days_at_any_interval(
+        self, tmp_path, interval_minutes, steps
+    ):
+        config = PipelineConfig(
+            output_dir=str(tmp_path), logs_dir=str(tmp_path),
+            interval_minutes=interval_minutes, horizon_steps=steps,
+        )
+        assert config.horizon_steps == steps
+
+    def test_the_api_serves_the_same_limit(self):
+        from ML_Pipeline.serving import MAX_HORIZON_STEPS
+
+        assert MAX_HORIZON_STEPS == 96
 
     def test_model_and_registry_paths_agree(self, tmp_path):
         """

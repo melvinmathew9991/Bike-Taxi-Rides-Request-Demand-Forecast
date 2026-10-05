@@ -216,7 +216,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--horizon-steps", type=int, default=None,
-        help="Intervals to forecast (default: one day)",
+        help="Intervals to forecast (default: one day; at most two days, where "
+             "the model stops clearly beating the seasonal-naive baseline)",
     )
     parser.add_argument(
         "--no-centroids", action="store_true", default=None,

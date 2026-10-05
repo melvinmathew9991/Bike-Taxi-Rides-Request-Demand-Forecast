@@ -44,6 +44,16 @@ DATA_STEMS: dict[str, str] = {
     "without_lag": "data_without_lag",
 }
 
+#: Longest forecast horizon, for the CLI and the API alike. Two days is where
+#: measured recursive MASE stops clearly beating seasonal-naive (0.82 at two
+#: days, 0.99 at one week); see the horizon table in docs/MODEL_CARD.md.
+MAX_HORIZON_DAYS = 2
+
+
+def max_horizon_steps(interval_minutes: int) -> int:
+    """`MAX_HORIZON_DAYS` in intervals of `interval_minutes`."""
+    return MAX_HORIZON_DAYS * 24 * 60 // interval_minutes
+
 
 def latest_artifact(output_dir: str | Path, data_type: str) -> Path | None:
     """
@@ -187,7 +197,8 @@ class PipelineConfig:
     early_stopping_rounds: int = 50
 
     # --- Forecasting -----------------------------------------------------
-    #: Intervals to forecast. Defaults to one day at `interval_minutes`.
+    #: Intervals to forecast. Defaults to one day at `interval_minutes`, and may
+    #: not exceed `MAX_HORIZON_DAYS`.
     horizon_steps: int | None = None
 
     # --- Logging / registry ---------------------------------------------
@@ -242,6 +253,16 @@ class PipelineConfig:
                 f"clustering_algorithm must be 'minibatch' or 'kmeans', "
                 f"got {self.clustering_algorithm!r}"
             )
+        if self.horizon_steps is not None:
+            limit = max_horizon_steps(self.interval_minutes)
+            if not 1 <= self.horizon_steps <= limit:
+                raise ValueError(
+                    f"horizon_steps must be between 1 and {limit} "
+                    f"({MAX_HORIZON_DAYS} days at {self.interval_minutes} minutes), "
+                    f"got {self.horizon_steps}. Past two days the model stops "
+                    "clearly beating a seasonal-naive forecast, and by a week it "
+                    "only ties it - see the horizon table in docs/MODEL_CARD.md."
+                )
 
     # --- Derived paths ---------------------------------------------------
 
