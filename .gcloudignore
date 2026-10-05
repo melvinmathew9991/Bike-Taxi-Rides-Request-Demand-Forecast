@@ -1,0 +1,6 @@
+# Uploaded to Cloud Build by deploy/gcp_deploy.sh. Starts from .gitignore, so
+# data/, output/ and the staged demo files never leave the machine this way.
+#!include:.gitignore
+.git
+.github/
+Notebook/

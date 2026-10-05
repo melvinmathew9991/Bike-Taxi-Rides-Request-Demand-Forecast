@@ -290,6 +290,19 @@ class TestAuthentication:
         assert client.get(path, headers={"X-API-Key": "wrong"}).status_code == 401
         assert client.get(path, headers={"X-API-Key": KEY}).status_code == 200
 
+    def test_a_configured_key_with_a_trailing_line_ending_still_matches(
+        self, client, monkeypatch
+    ):
+        """The first deployed key ended in \\r, which no header can carry."""
+        monkeypatch.setenv("BIKETAXI_API_KEY", KEY + "\r\n")
+        assert client.get("/model", headers={"X-API-Key": KEY}).status_code == 200
+
+    def test_a_blank_key_leaves_the_api_open_rather_than_unusable(
+        self, client, monkeypatch
+    ):
+        monkeypatch.setenv("BIKETAXI_API_KEY", "  ")
+        assert client.get("/model").status_code == 200
+
     def test_health_stays_open_for_the_container_healthcheck(self, client, monkeypatch):
         monkeypatch.setenv("BIKETAXI_API_KEY", KEY)
         assert client.get("/health").status_code == 200

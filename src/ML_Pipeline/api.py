@@ -77,8 +77,14 @@ API_KEY_ENV = "BIKETAXI_API_KEY"
 
 
 def _configured_key() -> str | None:
-    """Read per request, so a key set or rotated in the environment applies."""
-    return os.environ.get(API_KEY_ENV) or None
+    """
+    Read per request, so a key set or rotated in the environment applies.
+
+    Surrounding whitespace is dropped. The first key generated for the Cloud Run
+    deployment ended in a carriage return - Windows openssl writes CRLF - and a
+    header value cannot carry one, so no client could ever have matched it.
+    """
+    return (os.environ.get(API_KEY_ENV) or "").strip() or None
 
 
 def require_api_key(x_api_key: str | None = Header(None)) -> None:
