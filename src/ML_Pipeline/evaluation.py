@@ -218,6 +218,7 @@ class ModelEvaluator:
         ts_col: str = "ts",
         cluster_col: str = "pickup_cluster",
         target: str = "request_count",
+        naive=None,
     ) -> pd.DataFrame:
         """
         Error per cluster, not just globally.
@@ -230,6 +231,11 @@ class ModelEvaluator:
         maintenance section has always required monitoring error per cluster;
         nothing computed it.
 
+        `naive` supplies the seasonal-naive forecast, aligned to `panel` sorted by
+        cluster then time. Without it the baseline is computed inside `panel`, so
+        its first `season_length` intervals per cluster have none - pass it when
+        scoring a window shorter than a season plus the span to be scored.
+
         Returns:
             One row per cluster, worst MASE first: `n`, `mean_actual`,
             `mean_pred`, `level_ratio`, `rmse`, `mae`, `mase`.
@@ -237,10 +243,12 @@ class ModelEvaluator:
         ordered = panel.sort_values([cluster_col, ts_col]).reset_index(drop=True)
         work = ordered[[cluster_col, target]].copy()
         work["_pred"] = np.asarray(predictions, dtype="float64").ravel()
-        work["_naive"] = ModelEvaluator.seasonal_naive_baseline(
-            ordered, season_length=season_length, ts_col=ts_col,
-            cluster_col=cluster_col, target=target,
-        ).to_numpy(dtype="float64")
+        if naive is None:
+            naive = ModelEvaluator.seasonal_naive_baseline(
+                ordered, season_length=season_length, ts_col=ts_col,
+                cluster_col=cluster_col, target=target,
+            )
+        work["_naive"] = np.asarray(naive, dtype="float64").ravel()
 
         rows = []
         for cluster, group in work.groupby(cluster_col, sort=True):

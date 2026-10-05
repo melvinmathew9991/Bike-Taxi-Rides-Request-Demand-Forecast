@@ -35,12 +35,8 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from ML_Pipeline.config import latest_artifact, latest_version  # noqa: E402
 from ML_Pipeline.evaluation import ModelEvaluator  # noqa: E402
-from ML_Pipeline.features import (  # noqa: E402
-    add_calendar_features,
-    add_lag_features,
-    attach_cluster_centroids,
-)
 from ML_Pipeline.forecast import PREDICTION_COL, backtest_recursive  # noqa: E402
+from ML_Pipeline.monitoring import MissingFeaturesError, scoring_frame  # noqa: E402
 from ML_Pipeline.serving import ServingState  # noqa: E402
 from ML_Pipeline.utils import read_csv_any  # noqa: E402
 
@@ -604,17 +600,14 @@ def evaluate_recent_window(model_name: str, weeks: int):
     if not state.ready:
         return None, None
 
-    bundle = state.bundle
-    # The serving history is a bare [ts, cluster, count] panel, so every feature
-    # the model expects has to be rebuilt here - calendar included. Omitting the
-    # calendar features was silently caught by the KeyError below and surfaced as
-    # "could not score", which hid the real cause.
-    frame = add_lag_features(
-        state.history, lags=bundle.lags, rolling_window=bundle.rolling_window
-    )
-    frame = add_calendar_features(frame, "ts")
-    if state.centroids is not None and "cluster_lat" in bundle.feature_names:
-        frame = attach_cluster_centroids(frame, state.centroids)
+    # Shared with the scheduled health check, so the two cannot disagree about
+    # what the model is scored on. A feature the grid cannot supply is a real
+    # train/serve mismatch, and is named rather than swallowed.
+    try:
+        frame = scoring_frame(state)
+    except MissingFeaturesError as exc:
+        st.error(str(exc))
+        return None, None
 
     cutoff = frame["ts"].max() - pd.Timedelta(weeks=weeks)
     window = frame[frame["ts"] >= cutoff]
@@ -625,17 +618,7 @@ def evaluate_recent_window(model_name: str, weeks: int):
     window = window.reset_index(drop=True)
     if len(window) == 0:
         return None, None
-
-    missing = [c for c in bundle.feature_names if c not in window.columns]
-    if missing:
-        # Named, not swallowed: a feature the serving history cannot rebuild is a
-        # real train/serve mismatch and the operator needs to see which one.
-        st.error(
-            "This model needs feature(s) the demand grid cannot supply: "
-            + ", ".join(missing)
-        )
-        return None, None
-    return window, bundle.predict(window)
+    return window, state.bundle.predict(window)
 
 
 def _gate_tiles(state: ServingState) -> None:

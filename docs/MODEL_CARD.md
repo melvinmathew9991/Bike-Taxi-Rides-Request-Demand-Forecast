@@ -420,8 +420,12 @@ Conditions for use:
    case. Four weeks leaves two weeks of margin. Reproduce with
    `scripts/measure_staleness.py`.
 2. **Monitor `level_ratio` in production.** It degrades earliest and most
-   visibly, well before RMSE does. Nothing in the repository computes it on a
-   schedule yet.
+   visibly, well before RMSE does. `scripts/monitor_model.py` scores the serving
+   model on the latest week of demand it was not fitted on. It exits 3 when the
+   model is past the cadence in condition 1, loses to seasonal-naive, or has a
+   level ratio outside 0.90-1.10. The 0.90 floor sits between weeks four (0.92)
+   and five (0.87) of the staleness table above. Run it on a schedule; nothing
+   in the repository schedules it.
 3. **Keep the horizon at or below two days.** The default is one day. The gain
    decays as the new lags start consuming the model's own predictions, and by a
    one-week horizon the model only ties the baseline — see the horizon table
