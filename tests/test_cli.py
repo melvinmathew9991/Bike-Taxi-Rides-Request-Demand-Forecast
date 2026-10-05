@@ -43,6 +43,11 @@ class TestFlagsWithoutAConfig:
         assert config.test_fraction == 0.35
         assert config.horizon_steps == 96
 
+    def test_a_horizon_past_two_days_is_refused(self):
+        """It used to be accepted, though by a week the model only ties naive."""
+        with pytest.raises(ValueError, match="horizon_steps must be between 1 and 96"):
+            config_from_args(parse("--horizon-steps", "336"))
+
     def test_omitted_flags_fall_back_to_the_dataclass_defaults(self):
         config = config_from_args(parse())
         defaults = PipelineConfig()

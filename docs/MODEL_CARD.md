@@ -213,8 +213,8 @@ This is a property of the lag set, not a regression — at every horizon measure
 the current model beats what preceded it (recursive RMSE 8.261 at one day
 before these lags). But it means the headline MASE of 0.805 is a *one-step*
 figure, and the recursive figure of 0.794 is a *one-day* figure. Neither
-generalises to an arbitrary horizon, and `run_pipeline.py --horizon-steps` will
-happily accept one.
+generalises to an arbitrary horizon, which is why `PipelineConfig` refuses a
+horizon past two days, for the CLI and the API alike.
 
 ### Rolling-origin validation
 
@@ -440,7 +440,9 @@ Conditions for use:
 3. **Keep the horizon at or below two days.** The default is one day. The gain
    decays as the new lags start consuming the model's own predictions, and by a
    one-week horizon the model only ties the baseline — see the horizon table
-   above. Nothing in the code enforces this; `--horizon-steps` accepts any value.
+   above. Enforced: `PipelineConfig` refuses a `horizon_steps` past
+   `MAX_HORIZON_DAYS` (two days, 96 intervals), so `run_pipeline.py` exits 2,
+   and the API caps requests at the same limit.
 4. **Supply 7 days of contiguous history per cluster.** The weekly lag makes
    this a hard precondition of recursive serving, not a preference — the
    forecaster refuses rather than guesses if it is missing. Note that gaps are

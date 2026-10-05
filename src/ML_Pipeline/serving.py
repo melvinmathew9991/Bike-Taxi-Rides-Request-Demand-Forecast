@@ -20,17 +20,21 @@ from typing import Any
 import pandas as pd
 from joblib import load
 
-from ML_Pipeline.config import ModelRegistry, PipelineConfig, latest_artifact
+from ML_Pipeline.config import (
+    ModelRegistry,
+    PipelineConfig,
+    latest_artifact,
+    max_horizon_steps,
+)
 from ML_Pipeline.features import CLUSTER_COL, TARGET_COL, TS_COL, ModelBundle
 from ML_Pipeline.utils import read_csv_any
 
 logger = logging.getLogger(__name__)
 
 
-#: Longest horizon served, in intervals. 96 x 30min = two days, which is where
-#: the measured MASE stops clearly beating seasonal-naive. See the horizon table
-#: in docs/MODEL_CARD.md.
-MAX_HORIZON_STEPS = 96
+#: Longest horizon served, in intervals: `MAX_HORIZON_DAYS` at the 30-minute
+#: grid, 96. The same limit `PipelineConfig` enforces on the CLI.
+MAX_HORIZON_STEPS = max_horizon_steps(30)
 
 #: Retrain cadence from the model card. Past this the model is reported stale.
 STALE_AFTER_DAYS = 28
