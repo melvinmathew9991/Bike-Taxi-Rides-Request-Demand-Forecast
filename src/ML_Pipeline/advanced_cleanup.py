@@ -34,6 +34,15 @@ logger = logging.getLogger(__name__)
 INDIA_BBOX = (6.2325274, 35.6745457, 68.1113787, 97.395561)
 KARNATAKA_BBOX = (11.5945587, 18.4767308, 74.0543908, 78.588083)
 
+#: The area the model is for. The model card has always scoped it to Bangalore
+#: and called other areas out of scope, but nothing enforced it: 4.05% of cleaned
+#: pickups (156,689) lay hundreds of km away - Hyderabad, Mysuru, Chennai,
+#: Odisha, Rajasthan - and took 8 of the 50 clusters, each spanning cities. The
+#: edges are generous and sit in near-empty ground: 51 pickups fall within ~30 km
+#: outside the box and 5-8 in each 0.05-degree strip inside its edges, so no
+#: suburb is cut. Kempegowda airport (13.20, 77.71) is inside.
+BENGALURU_BBOX = (12.70, 13.30, 77.30, 77.90)
+
 MIN_TRIP_DISTANCE_KM = 0.05      # 50 m: pickup and drop effectively identical
 MAX_PLAUSIBLE_TRIP_KM = 500.0    # beyond this a bike-taxi trip is not credible
 REBOOK_SAME_LOCATION_HOURS = 1   # same rider, same pickup pin, within an hour
@@ -51,12 +60,20 @@ def _outside(df: pd.DataFrame, bbox: tuple[float, float, float, float]) -> pd.Se
     )
 
 
-def advanced_cleanup(df: pd.DataFrame) -> pd.DataFrame:
+def advanced_cleanup(
+    df: pd.DataFrame,
+    *,
+    service_area: tuple[float, float, float, float] | None = BENGALURU_BBOX,
+) -> pd.DataFrame:
     """
     Apply business-rule filters to booking-level data.
 
     Requires the gap columns from `shift_time` - `booking_time_diff_min` for
     Rule 2 and `pin_time_diff_min` for Rule 1 - and pickup/drop coordinates.
+
+    Args:
+        service_area: Bounding box pickups must fall in (Rule 6). None keeps
+            every pickup that passes Rules 1-5.
 
     Returns:
         Cleaned copy with a `geodesic_distance` column (km).
@@ -151,6 +168,20 @@ def advanced_cleanup(df: pd.DataFrame) -> pd.DataFrame:
     out = out.loc[~suspect].copy()
     logger.info("Rule 5 (outside Karnataka and >%.0f km): dropped %d rows",
                 MAX_PLAUSIBLE_TRIP_KM, before - len(out))
+
+    # Rule 6: pickup outside the service area. Unlike Rules 4 and 5 these are
+    # real bookings, not bad data - they are demand somewhere this model does not
+    # cover. Pickup only: demand is counted where the ride starts, so a trip
+    # from Bengaluru to anywhere is Bengaluru demand.
+    if service_area is not None:
+        before = len(out)
+        min_lat, max_lat, min_lng, max_lng = service_area
+        inside = out.pick_lat.between(min_lat, max_lat) & out.pick_lng.between(
+            min_lng, max_lng
+        )
+        out = out.loc[inside].copy()
+        logger.info("Rule 6 (pickup outside the service area %s): dropped %d rows",
+                    service_area, before - len(out))
 
     out = out.reset_index(drop=True)
     logger.info(
