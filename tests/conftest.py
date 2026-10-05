@@ -30,6 +30,15 @@ HOUR_PROFILE = np.array(
 )
 
 
+@pytest.fixture(autouse=True)
+def no_api_key(monkeypatch):
+    """
+    A BIKETAXI_API_KEY set in the developer's shell must not turn every API test
+    into a 401. Tests that exercise authentication set it themselves.
+    """
+    monkeypatch.delenv("BIKETAXI_API_KEY", raising=False)
+
+
 @pytest.fixture
 def rng() -> np.random.Generator:
     return np.random.default_rng(20240803)

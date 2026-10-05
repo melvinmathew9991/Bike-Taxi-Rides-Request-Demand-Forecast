@@ -91,6 +91,11 @@ live.
 | `GET /model` | what is serving: features, lags, gate verdict, data lag, age, staleness |
 | `GET /clusters` | the clusters this model can forecast for |
 | `GET /forecast?steps=48&cluster=7` | demand per cluster per interval, forward from the last observation |
+| `POST /reload` | load a newly promoted model or refreshed grid without a restart (needs the API key) |
+
+With `BIKETAXI_API_KEY` set, every endpoint but `/health` needs it in an
+`X-API-Key` header. Without it the API is open, which suits a public demo, and
+`/reload` is disabled.
 
 Three behaviours are deliberate, and each is a measurement turned into code
 rather than a preference:
@@ -109,8 +114,34 @@ rather than a preference:
   from where the model's training data ends (`data_lag_days`), not from when it
   was trained.
 
-A container is provided but **has not been build-verified** — see the note at the
-top of the `Dockerfile`.
+### Running it
+
+The container is built and smoke-tested in CI: it starts on a synthetic output
+directory, becomes ready, refuses a request without the key and serves a
+forecast with it.
+
+```bash
+docker build -t bike-taxi-forecast .
+docker run -d -p 8000:8000 -v "$PWD/output:/app/output:ro" \
+  -e BIKETAXI_API_KEY=<key> bike-taxi-forecast
+```
+
+`output/` is mounted, never baked in: it holds booking-level personal data. A
+registry written on Windows loads in the Linux container - model paths that do
+not exist as written are looked up by file name in the output directory.
+
+### Operations runbook
+
+| Situation | Do this |
+|---|---|
+| A new model is trained | `python scripts/registry.py promote <name>` (refused if it failed its gate), then `POST /reload` |
+| The serving model misbehaves | `python scripts/registry.py rollback`, then `POST /reload` |
+| What is registered, and what is serving? | `python scripts/registry.py list`, or `GET /model` |
+| Is the serving model still healthy? | `python scripts/monitor_model.py` - exit 3 means retrain or ship the baseline |
+| A reload is refused (409) | the running model keeps serving; the response says what could not be loaded |
+
+Every request is logged with its status, duration and the serving model, so a
+rollback is visible in the log as the model name changing.
 
 ### Forecasting from a saved model
 
@@ -152,6 +183,8 @@ scripts/compare_strategies.py  rolling-origin strategy sweep
 scripts/measure_staleness.py   model decay by weeks since training
 scripts/measure_peak_error.py  stale vs refitted model at the busiest cluster's peak
 scripts/monitor_model.py       scheduled health check on the serving model
+scripts/registry.py            list, promote and roll back models
+scripts/build_smoke_output.py  synthetic output directory for the container smoke test
 scripts/fetch_weather.py       hourly Bengaluru weather from Open-Meteo, for the experiment below
 scripts/measure_weather.py     whether weather or holidays improve the forecast (they do not)
 tests/                    pytest suite (synthetic data only)

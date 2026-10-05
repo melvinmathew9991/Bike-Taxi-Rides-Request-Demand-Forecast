@@ -26,16 +26,31 @@ recursive forecast starts from the last observed interval, so its origin is a
 fact the caller needs. And the model is anchored to its training era - demand
 grew 5.2x across the reference year - so `/model` reports the model's age against
 the four-week retraining cadence the model card mandates.
+
+Operation:
+
+* **Authentication is optional.** With `BIKETAXI_API_KEY` set, every endpoint
+  but `/health` needs it in an `X-API-Key` header. Unset, the API is open, which
+  suits a public demo; it says so in the log at startup. `/health` stays open
+  for the container healthcheck and load balancers.
+* **`POST /reload` picks up a new model or grid without a restart.** It needs
+  the key, and is refused outright when none is configured, so an open demo
+  cannot be made to re-read its data on demand.
+* **Each request is logged** with its status, duration and the model serving
+  it.
 """
 
 from __future__ import annotations
 
 import logging
+import os
+import secrets
+import time
 from datetime import datetime
 from typing import Any
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from ML_Pipeline.features import CLUSTER_COL, TS_COL
@@ -45,9 +60,37 @@ from ML_Pipeline.serving import (
     STALE_AFTER_DAYS,
     ServingState,
     get_state,
+    reload_state,
 )
 
 logger = logging.getLogger(__name__)
+access_logger = logging.getLogger("ML_Pipeline.api.access")
+
+# Uvicorn configures its own loggers but not the root, so without this the
+# module's INFO lines - the access log included - are dropped.
+logging.basicConfig(
+    level=os.environ.get("BIKETAXI_LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+
+API_KEY_ENV = "BIKETAXI_API_KEY"
+
+
+def _configured_key() -> str | None:
+    """Read per request, so a key set or rotated in the environment applies."""
+    return os.environ.get(API_KEY_ENV) or None
+
+
+def require_api_key(x_api_key: str | None = Header(None)) -> None:
+    """Reject a request without the configured key. Open when none is set."""
+    expected = _configured_key()
+    if expected is None:
+        return
+    if x_api_key is None or not secrets.compare_digest(x_api_key, expected):
+        raise HTTPException(
+            status_code=401,
+            detail="Missing or invalid API key. Send it in the X-API-Key header.",
+        )
 
 class ForecastPoint(BaseModel):
     """One cluster's demand for one interval."""
@@ -110,6 +153,38 @@ app = FastAPI(
     version="1.0.0",
 )
 
+if _configured_key() is None:
+    logger.warning(
+        "%s is not set: the API is open to anyone who can reach it, and /reload "
+        "is disabled. Set it for anything but a public demo.", API_KEY_ENV,
+    )
+
+
+class ReloadResponse(BaseModel):
+    reloaded: bool
+    model_name: str | None = None
+    previous_model_name: str | None = None
+    history_ends_at: datetime | None = None
+    detail: str
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """One line per request: method, path, status, duration, serving model."""
+    started = time.perf_counter()
+    response = await call_next(request)
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    try:
+        model = get_state().model_name
+    except Exception:  # noqa: BLE001 - logging must never fail a request
+        model = None
+    access_logger.info(
+        "%s %s %d %.1fms model=%s",
+        request.method, request.url.path, response.status_code, elapsed_ms,
+        model or "-",
+    )
+    return response
+
 
 @app.get("/health")
 def health() -> dict[str, Any]:
@@ -123,7 +198,50 @@ def health() -> dict[str, Any]:
     }
 
 
-@app.get("/model", response_model=ModelInfoResponse)
+@app.post(
+    "/reload", response_model=ReloadResponse,
+    dependencies=[Depends(require_api_key)],
+)
+def reload() -> ReloadResponse:
+    """
+    Load the promoted model and the latest demand grid without a restart.
+
+    Run after promoting a model or refreshing the grid. If the new state cannot
+    serve, the running model stays in place and the response says why.
+    """
+    if _configured_key() is None:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Reload is disabled while the API is open. Set {API_KEY_ENV} "
+                   "to enable it.",
+        )
+    fresh, previous = reload_state()
+    previous_name = previous.model_name if previous else None
+    if not fresh.ready:
+        missing = []
+        if fresh.bundle is None:
+            missing.append("no promoted model could be loaded")
+        if fresh.history is None:
+            missing.append("no demand grid was found")
+        raise HTTPException(
+            status_code=409,
+            detail="Reload refused, still serving "
+                   f"{previous_name or 'nothing'}: " + "; ".join(missing) + ".",
+        )
+    logger.info("Reloaded: %s -> %s", previous_name, fresh.model_name)
+    return ReloadResponse(
+        reloaded=True,
+        model_name=fresh.model_name,
+        previous_model_name=previous_name,
+        history_ends_at=fresh.history_ends_at,
+        detail="Serving the newly loaded model and history.",
+    )
+
+
+@app.get(
+    "/model", response_model=ModelInfoResponse,
+    dependencies=[Depends(require_api_key)],
+)
 def model_info() -> ModelInfoResponse:
     """What is serving, how good it was measured to be, and how old it is."""
     state = get_state()
@@ -157,7 +275,7 @@ def model_info() -> ModelInfoResponse:
     )
 
 
-@app.get("/clusters")
+@app.get("/clusters", dependencies=[Depends(require_api_key)])
 def clusters() -> dict[str, Any]:
     """Clusters this model can forecast for."""
     state = get_state()
@@ -166,7 +284,10 @@ def clusters() -> dict[str, Any]:
     return {"clusters": state.clusters(), "count": len(state.clusters())}
 
 
-@app.get("/forecast", response_model=ForecastResponse)
+@app.get(
+    "/forecast", response_model=ForecastResponse,
+    dependencies=[Depends(require_api_key)],
+)
 def forecast(
     steps: int = Query(
         48,
@@ -267,4 +388,5 @@ __all__ = [
     "ServingState",
     "app",
     "get_state",
+    "reload_state",
 ]
