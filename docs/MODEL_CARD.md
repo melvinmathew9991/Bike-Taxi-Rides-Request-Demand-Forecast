@@ -25,9 +25,10 @@ anticipation, shift planning — at the level of a geographic cluster.
   The model is fitted on aggregate counts and says nothing about a person.
 - Long-horizon strategic forecasting. Trained on a single year that includes the
   COVID-19 period; it has no basis for multi-year projection.
-- Areas outside the training footprint. The cluster model was fitted on
-  Bangalore; coordinates elsewhere are assigned to a nearest cluster that means
-  nothing.
+- Areas outside the training footprint. Cleaning keeps only pickups inside
+  12.70-13.30°N, 77.30-77.90°E (`BENGALURU_BBOX`), so the cluster model is
+  fitted on Bangalore alone; coordinates elsewhere are assigned to a nearest
+  cluster that means nothing.
 
 ## Training data
 
@@ -40,16 +41,27 @@ Target: `request_count`, requests per cluster per 30 minutes.
 ### Measured target statistics
 
 From the pipeline's own `Data_Prepared.csv.gz` on the reference dataset
-(878,300 rows = 17,566 intervals x 50 clusters, 3,866,172 requests retained from
-8,381,556 raw bookings — the business rules remove 53.5%):
+(878,300 rows = 17,566 intervals x 50 clusters, 3,709,432 requests retained from
+8,381,556 raw bookings — the business rules remove 55.7%):
 
 | | value |
 |---|---|
-| mean | 4.402 |
-| std | 7.320 |
+| mean | 4.223 |
+| std | 6.899 |
 | median | 2.0 |
-| max | 141 |
-| zero-demand intervals | 37.0% |
+| max | 140 |
+| zero-demand intervals | 35.8% |
+
+> **Pickups outside Bengaluru are excluded since 2026-10-05** (Rule 6). The
+> scope below always said Bangalore, but 156,740 cleaned pickups (4.05%) lay
+> hundreds of km away — Hyderabad, Mysuru, Chennai, Odisha, Rajasthan — and
+> took 8 of the 50 clusters, each centred between cities. They were the eight
+> quiet clusters the monitor's replay drill kept flagging. Now all 50 centres
+> are in the city. Accuracy is unchanged within noise: deploy-gate MASE 0.804
+> against 0.806, 0 clusters losing to seasonal-naive either way, and R² 0.879
+> against 0.884. RMSE fell (3.85 from 4.04) but is not comparable, because the
+> clusters are different. The other figures on this card were measured before
+> the change.
 
 > **The retained count changed on 2026-10-02.** Rule 1 — "same rider rebooking
 > the same pickup pin within an hour" — was evaluated as a different rule: it
@@ -546,7 +558,8 @@ as a record of the original work.
    invisible — see the feedback-loop discussion in `DATA_GOVERNANCE.md`.
 7. **Cluster geometry is fixed at training time.** The city changes; the cluster
    model does not, until refitted.
-8. **Aggressive cleaning.** The business rules remove 53.5% of raw bookings, on
+8. **Aggressive cleaning.** The business rules remove 55.7% of raw bookings,
+   1.9 points of it pickups outside Bengaluru, and the rest on
    the assumption that rebookings and retries are duplicates of one intention.
    If a rider genuinely requests two rides nine minutes apart, that is counted
    once. The thresholds — one hour at the same pin, eight minutes anywhere — are

@@ -20,6 +20,7 @@ import pandas as pd
 import pytest
 
 from ML_Pipeline.advanced_cleanup import (
+    BENGALURU_BBOX,
     INDIA_BBOX,
     KARNATAKA_BBOX,
     MAX_PLAUSIBLE_TRIP_KM,
@@ -219,6 +220,9 @@ class TestRule4OutsideIndia:
 
 
 class TestRule5OutsideKarnatakaAndImplausiblyLong:
+    # These pickups are outside Bengaluru, so Rule 6 would drop them; it is
+    # switched off to test Rule 5 on its own.
+
     def test_a_long_trip_inside_karnataka_is_kept(self):
         """Either condition alone is allowed; only the combination is bad data."""
         min_lat, max_lat, min_lng, max_lng = KARNATAKA_BBOX
@@ -226,7 +230,8 @@ class TestRule5OutsideKarnatakaAndImplausiblyLong:
             rows(
                 pick_lat=[min_lat + 0.1], pick_lng=[min_lng + 0.1],
                 drop_lat=[max_lat - 0.1], drop_lng=[max_lng - 0.1],
-            )
+            ),
+            service_area=None,
         )
         assert len(out) == 1
 
@@ -236,7 +241,8 @@ class TestRule5OutsideKarnatakaAndImplausiblyLong:
             rows(
                 pick_lat=[19.0760], pick_lng=[72.8777],
                 drop_lat=[19.0900], drop_lng=[72.8800],
-            )
+            ),
+            service_area=None,
         )
         assert len(out) == 1
 
@@ -256,6 +262,45 @@ class TestRule5OutsideKarnatakaAndImplausiblyLong:
             )[0]
             > MAX_PLAUSIBLE_TRIP_KM
         )
+
+
+class TestRule6OutsideTheServiceArea:
+    @pytest.mark.parametrize(
+        "lat,lng",
+        [(17.3850, 78.4867), (12.2958, 76.6394), (13.0827, 80.2707)],
+        ids=["hyderabad", "mysuru", "chennai"],
+    )
+    def test_a_pickup_in_another_city_is_dropped(self, lat, lng):
+        out = advanced_cleanup(
+            rows(pick_lat=[lat], pick_lng=[lng],
+                 drop_lat=[lat + 0.01], drop_lng=[lng + 0.01])
+        )
+        assert out.empty
+
+    def test_a_trip_out_of_bengaluru_is_kept(self):
+        """Demand is counted at the pickup; the drop can be anywhere."""
+        out = advanced_cleanup(rows(drop_lat=[12.2958], drop_lng=[76.6394]))
+        assert len(out) == 1
+
+    def test_the_airport_is_inside(self):
+        out = advanced_cleanup(
+            rows(pick_lat=[13.1989], pick_lng=[77.7068],
+                 drop_lat=[12.9716], drop_lng=[77.5946])
+        )
+        assert len(out) == 1
+
+    def test_the_box_is_inclusive_at_its_edges(self):
+        min_lat, _, min_lng, _ = BENGALURU_BBOX
+        out = advanced_cleanup(rows(pick_lat=[min_lat], pick_lng=[min_lng]))
+        assert len(out) == 1
+
+    def test_it_can_be_switched_off(self):
+        out = advanced_cleanup(
+            rows(pick_lat=[17.3850], pick_lng=[78.4867],
+                 drop_lat=[17.3950], drop_lng=[78.4967]),
+            service_area=None,
+        )
+        assert len(out) == 1
 
 
 class TestContract:
