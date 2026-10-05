@@ -640,10 +640,15 @@ consequences, and under-served areas are structurally the most exposed.
 
 ## Maintenance
 
-- **Retrain** when demand patterns shift materially, and at minimum when the
-  recursive backtest RMSE degrades against the recorded baseline.
+- **Retrain** at least every four weeks, and sooner when
+  `scripts/monitor_model.py` exits 3 - stale, losing to seasonal-naive, or a
+  level ratio outside 0.90-1.10. It scores the latest week the model was not
+  fitted on; nothing schedules it yet, so run it weekly from cron or a
+  scheduler wherever the output directory lives.
 - **Monitor** forecast error per cluster, not just globally. The global number
-  hid cluster 30 losing to the baseline; the per-cluster view found it.
+  hid cluster 30 losing to the baseline; the per-cluster view found it. The
+  monitor reports every cluster, and warns on any losing to the baseline or,
+  above 3 requests per interval, outside the level band.
 - **Measure staleness from the data, not the calendar.** `data_lag_days` — the
   history the model has not been fitted on — is what the decay curve is measured
   in. Wall-clock age reads zero for a model fitted today on old data.
@@ -655,7 +660,15 @@ consequences, and under-served areas are structurally the most exposed.
   marked `production` in the registry, never simply the newest. `promote_model`
   refuses a model that failed its deploy gate *or* that carries no verdict, and
   `rollback()` restores the previously promoted one. `run_pipeline.py --promote`
-  does it as part of a training run.
-- **The API caps the horizon at 96 intervals (two days)** and reports data lag
-  and model age against the four-week cadence, so the two conditions of use above are enforced
-  at the serving boundary rather than left to the caller.
+  does it as part of a training run; `scripts/registry.py list | promote |
+  rollback` does it from the command line, and `POST /reload` makes a running
+  API serve the change without a restart.
+- **The API caps the horizon at 96 intervals (two days)**, as does
+  `PipelineConfig` for the CLI, and reports data lag and model age against the
+  four-week cadence, so the two conditions of use above are enforced at the
+  serving boundary rather than left to the caller.
+- **The hosted demo** (Cloud Run, see `deploy/README.md`) serves
+  `xgb_with_lag_20261005_142518`, promoted 2026-10-05: geofenced data, refit on
+  all data through 2021-03-26, deploy-gate MASE 0.804. It is frozen - the data
+  ends there - so it reports itself stale 28 days after training. Redeploy with
+  `deploy/gcp_deploy.sh` after promoting a new model.

@@ -65,7 +65,38 @@ raises instead of silently reordering columns.
 
 `pickup_cluster_model_<version>.joblib` is the fitted clustering model. It must
 be paired with the demand models trained alongside it — cluster labels are only
-meaningful relative to the model that produced them.
+meaningful relative to the model that produced them. As fitted, it also holds a
+cluster label for every training booking (`labels_`, 3.7 M on the reference
+data); serving reads only `cluster_centers_`.
+
+`model_registry.json` records every trained model, its metrics and deploy-gate
+verdict, and which one is `production`. Model paths are stored as the training
+run wrote them; serving falls back to the same file name in its own output
+directory, so a registry written on Windows loads in a Linux container.
+
+## Monitoring report: `output/health.json`
+
+Written by `scripts/monitor_model.py --json output/health.json`.
+
+| Field | Notes |
+|---|---|
+| `healthy` | False when any check failed; the script then exits 3. |
+| `checks` | `staleness`, `mase`, `level_ratio`, `clusters`, each `pass`, `warn`, `fail` or `skipped`, with a reason. |
+| `mase`, `level_ratio` | Over the scored week, against seasonal-naive. `null` when skipped. |
+| `window_start`, `window_end`, `rows_scored` | The week scored: the latest the model was not fitted on. |
+| `clusters` | One row per cluster: `n`, `mean_actual`, `mean_pred`, `level_ratio`, `rmse`, `mae`, `mase`. |
+
+## Hosted demo files: `deploy/.staging/`
+
+Written by `scripts/stage_demo_output.py` and uploaded by `deploy/gcp_deploy.sh`.
+Aggregated only, and git-ignored:
+
+| File | Contents |
+|---|---|
+| `Data_Prepared_<version>.csv.gz` | the demand grid above, last 14 days (`--history-days`) |
+| `prediction_model_with_lag_<version>.joblib` | the promoted model, as trained |
+| `pickup_cluster_model_<version>.joblib` | an object holding `cluster_centers_` only — no per-booking labels |
+| `model_registry.json` | the promoted entry only, with its path reduced to the file name |
 
 ## Generating synthetic data
 
