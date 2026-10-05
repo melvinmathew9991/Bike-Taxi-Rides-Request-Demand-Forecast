@@ -1,13 +1,16 @@
 # Forecast serving API.
 #
-# NOT YET BUILD-VERIFIED. This was written on a machine whose Docker daemon was
-# unavailable, so it has not been through `docker build`. Treat it as a reviewed
-# starting point rather than a tested artifact; the API itself is covered by
-# tests/test_serving_api.py, which does run.
+# Built and smoke-tested in CI (the `container` job in .github/workflows/ci.yml):
+# it starts on a synthetic output directory, becomes ready, refuses a request
+# without the API key, and serves a forecast with it.
 #
 # Build and run:
 #   docker build -t bike-taxi-forecast .
-#   docker run --rm -p 8000:8000 -v "$PWD/output:/app/output:ro" bike-taxi-forecast
+#   docker run --rm -p 8000:8000 -v "$PWD/output:/app/output:ro" \
+#     -e BIKETAXI_API_KEY=<key> bike-taxi-forecast
+#
+# Without BIKETAXI_API_KEY the API is open, which suits a public demo; /reload is
+# then disabled.
 #
 # The output directory is mounted rather than copied in. It holds the demand grid
 # and the model artifacts, and it is deliberately git-ignored: the booking-level

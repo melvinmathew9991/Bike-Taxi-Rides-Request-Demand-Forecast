@@ -271,6 +271,130 @@ class TestStaleness:
         assert client.get("/model").json()["stale"] is False
 
 
+KEY = "test-key-123"
+
+
+class TestAuthentication:
+    """Optional: required when BIKETAXI_API_KEY is set, open otherwise."""
+
+    def test_without_a_configured_key_the_api_is_open(self, client, monkeypatch):
+        monkeypatch.delenv("BIKETAXI_API_KEY", raising=False)
+        assert client.get("/forecast?steps=2").status_code == 200
+
+    @pytest.mark.parametrize("path", ["/forecast?steps=2", "/model", "/clusters"])
+    def test_with_a_key_configured_a_request_without_it_is_refused(
+        self, client, monkeypatch, path
+    ):
+        monkeypatch.setenv("BIKETAXI_API_KEY", KEY)
+        assert client.get(path).status_code == 401
+        assert client.get(path, headers={"X-API-Key": "wrong"}).status_code == 401
+        assert client.get(path, headers={"X-API-Key": KEY}).status_code == 200
+
+    def test_health_stays_open_for_the_container_healthcheck(self, client, monkeypatch):
+        monkeypatch.setenv("BIKETAXI_API_KEY", KEY)
+        assert client.get("/health").status_code == 200
+
+
+def add_promoted_model(tmp_path, name="xgb_with_lag_20260202_030405"):
+    """Register and promote a second model, as a retrain would."""
+    source = next(tmp_path.glob("prediction_model_with_lag_*.joblib"))
+    target = tmp_path / f"prediction_model_with_lag_{name[-15:]}.joblib"
+    target.write_bytes(source.read_bytes())
+    registry = ModelRegistry(str(tmp_path / "model_registry.json"))
+    registry.register_model(
+        model_name=name, model_path=str(target), model_type="xgboost",
+        metrics={"test_rmse": 3.0, "beats_seasonal_naive": 1.0},
+    )
+    registry.promote_model(name)
+    return name
+
+
+@pytest.fixture
+def live(tmp_path, monkeypatch):
+    """The real process-wide state, pointed at a temporary output directory."""
+    monkeypatch.setenv("BIKETAXI_OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr("ML_Pipeline.serving._state", None)
+    return TestClient(app)
+
+
+class TestReload:
+    def test_a_newly_promoted_model_is_served_without_a_restart(
+        self, tmp_path, live, monkeypatch
+    ):
+        first, _ = build_output_dir(tmp_path)
+        monkeypatch.setenv("BIKETAXI_API_KEY", KEY)
+        headers = {"X-API-Key": KEY}
+        assert live.get("/model", headers=headers).json()["model_name"] == first
+
+        second = add_promoted_model(tmp_path)
+        assert live.get("/model", headers=headers).json()["model_name"] == first, (
+            "precondition: without a reload the old model keeps serving"
+        )
+        body = live.post("/reload", headers=headers).json()
+        assert body["reloaded"] is True
+        assert body["model_name"] == second
+        assert body["previous_model_name"] == first
+        assert live.get("/model", headers=headers).json()["model_name"] == second
+
+    def test_a_reload_that_cannot_serve_keeps_the_running_model(
+        self, tmp_path, live, monkeypatch
+    ):
+        first, _ = build_output_dir(tmp_path)
+        monkeypatch.setenv("BIKETAXI_API_KEY", KEY)
+        headers = {"X-API-Key": KEY}
+        live.get("/model", headers=headers)
+        for grid in tmp_path.glob("Data_Prepared_*"):
+            grid.unlink()
+
+        response = live.post("/reload", headers=headers)
+        assert response.status_code == 409
+        assert first in response.json()["detail"]
+        assert live.get("/model", headers=headers).json()["model_name"] == first
+        assert live.get("/forecast?steps=2", headers=headers).status_code == 200
+
+    def test_reload_is_disabled_on_an_open_api(self, tmp_path, live, monkeypatch):
+        """An open demo must not re-read its data for anyone who asks."""
+        build_output_dir(tmp_path)
+        monkeypatch.delenv("BIKETAXI_API_KEY", raising=False)
+        assert live.post("/reload").status_code == 403
+
+    def test_reload_needs_the_key(self, tmp_path, live, monkeypatch):
+        build_output_dir(tmp_path)
+        monkeypatch.setenv("BIKETAXI_API_KEY", KEY)
+        assert live.post("/reload").status_code == 401
+
+
+class TestAccessLog:
+    def test_each_request_is_logged_with_status_and_model(self, client, caplog):
+        with caplog.at_level("INFO", logger="ML_Pipeline.api.access"):
+            client.get("/forecast?steps=2")
+        line = next(r.getMessage() for r in caplog.records
+                    if r.name == "ML_Pipeline.api.access")
+        assert line.startswith("GET /forecast 200 ")
+        assert "model=xgb_with_lag_20260102_030405" in line
+
+
+class TestRegistryPortability:
+    def test_a_registry_written_on_windows_loads_elsewhere(self, tmp_path):
+        """
+        The real registry held `output\\prediction_model_...joblib`. In a Linux
+        container that is not a path to anything, so the API served nothing.
+        """
+        name, version = build_output_dir(tmp_path)
+        registry_file = tmp_path / "model_registry.json"
+        stored = json.loads(registry_file.read_text())
+        stored[name]["model_path"] = (
+            f"some\\other\\machine\\output\\prediction_model_with_lag_{version}.joblib"
+        )
+        registry_file.write_text(json.dumps(stored))
+
+        state = ServingState(
+            PipelineConfig(output_dir=str(tmp_path), logs_dir=str(tmp_path))
+        )
+        assert state.ready
+        assert state.model_name == name
+
+
 class TestNotReady:
     def test_without_a_promoted_model_serving_refuses_clearly(self, tmp_path, monkeypatch):
         """503, not 500, and it says what is missing."""

@@ -12,8 +12,8 @@ from __future__ import annotations
 import logging
 import os
 import re
+import threading
 from datetime import datetime
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -84,7 +84,7 @@ class ServingState:
             return
         self.model_name, self.info = promoted
 
-        model_path = Path(self.info["model_path"])
+        model_path = self._resolve_artifact(self.info["model_path"])
         if not model_path.exists():
             logger.error(
                 "Promoted model %r points at %s, which does not exist.",
@@ -129,6 +129,25 @@ class ServingState:
             self.model_name, self.history[TS_COL].max(),
             self.history[CLUSTER_COL].nunique(),
         )
+
+    def _resolve_artifact(self, raw: str) -> Path:
+        """
+        Find a registry path on this machine.
+
+        The registry records paths as the training run wrote them - relative to
+        its working directory, in its OS's separators. A registry written on
+        Windows holds `output\\prediction_model_...joblib`, which on Linux is one
+        file name containing a backslash, so a container could not load a model
+        trained on a laptop. When the path does not exist as written, the same
+        file name in this state's output directory is used: that is where the
+        registry itself lives, wherever the directory is mounted.
+        """
+        as_written = Path(raw)
+        if as_written.exists():
+            return as_written
+        name = raw.replace("\\", "/").rsplit("/", 1)[-1]
+        alongside = Path(self.config.output_dir) / name
+        return alongside if alongside.exists() else as_written
 
     # --- derived facts ---------------------------------------------------
 
@@ -222,7 +241,37 @@ class ServingState:
         return sorted(int(c) for c in self.history[CLUSTER_COL].unique())
 
 
-@lru_cache(maxsize=1)
+_state: ServingState | None = None
+_state_lock = threading.Lock()
+
+
 def get_state() -> ServingState:
     """Process-wide serving state, built on first use."""
-    return ServingState()
+    global _state
+    if _state is None:
+        with _state_lock:
+            if _state is None:
+                _state = ServingState()
+    return _state
+
+
+def reload_state() -> tuple[ServingState, ServingState | None]:
+    """
+    Load the promoted model and history afresh, and serve them if they are ready.
+
+    State used to be built once per process, so a retrain or a refreshed demand
+    grid reached the API only on restart. The new state is built in full before
+    it replaces the old one, so a request never sees a half-loaded model, and a
+    reload that cannot serve - nothing promoted, a missing file - leaves the
+    running model in place rather than taking the API down.
+
+    Returns:
+        `(fresh, previous)`. `fresh` is serving only if `fresh.ready`.
+    """
+    global _state
+    fresh = ServingState()
+    with _state_lock:
+        previous = _state
+        if fresh.ready:
+            _state = fresh
+    return fresh, previous

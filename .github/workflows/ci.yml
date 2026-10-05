@@ -60,3 +60,56 @@ jobs:
       # a local run can pass off git-ignored files that a clone will not have.
       - name: Test
         run: pytest
+
+  # The Dockerfile was written without a Docker daemon and never built. This
+  # builds it, starts it on a synthetic output directory, and checks the three
+  # things a deployment depends on: it becomes ready, it refuses a request
+  # without the key, and it serves a forecast with it.
+  container:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: bike-taxi-forecast:ci
+      API_KEY: ci-smoke-key
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t "$IMAGE" .
+
+      # Built inside the image, so the model is pickled by the xgboost that
+      # will load it. Run as the runner's user so it can write the mount.
+      - name: Build synthetic output directory
+        run: |
+          mkdir smoke
+          docker run --rm -i --user "$(id -u)" -v "$PWD/smoke:/smoke" "$IMAGE" \
+            python - /smoke < scripts/build_smoke_output.py
+
+      - name: Start container
+        run: |
+          docker run -d --name api -p 8000:8000 \
+            -e BIKETAXI_API_KEY="$API_KEY" \
+            -v "$PWD/smoke:/app/output:ro" "$IMAGE"
+
+      - name: Wait until ready
+        run: |
+          for i in $(seq 1 45); do
+            if curl -fsS localhost:8000/health | grep -q '"ready":true'; then
+              echo "ready after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "container never became ready"; exit 1
+
+      - name: Refuses a request without the key
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' 'localhost:8000/forecast?steps=2')
+          echo "status $code"; test "$code" = 401
+
+      - name: Serves a forecast with the key
+        run: |
+          curl -fsS -H "X-API-Key: $API_KEY" 'localhost:8000/forecast?steps=4' \
+            | python3 -c "import json, sys; b = json.load(sys.stdin); n = len(b['forecast']); print(b['model_name'], n, 'points'); sys.exit(0 if n == 12 else 1)"
+
+      - name: Container logs
+        if: always()
+        run: docker logs api || true
