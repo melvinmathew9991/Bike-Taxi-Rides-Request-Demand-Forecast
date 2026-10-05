@@ -147,7 +147,9 @@ def main() -> int:
 
     rows = []
     for kind in STRATEGIES:
-        per_cluster = window.groupby(CLUSTER_COL).apply(lambda g, k=kind: mase(g, k))
+        per_cluster = pd.Series(
+            {c: mase(g, kind) for c, g in window.groupby(CLUSTER_COL)}
+        )
         rows.append({
             "strategy": kind,
             "mase": mase(window, kind),
