@@ -53,6 +53,9 @@ dev = [
     "ruff>=0.4,<1.0",
     # fastapi.testclient needs httpx; without it the API tests cannot run.
     "httpx>=0.24,<1.0",
+    # Karnataka holiday calendar for scripts/measure_weather.py. Not a pipeline
+    # dependency: the experiment found holidays not worth adding as a feature.
+    "holidays>=0.50,<1.0",
 ]
 # Historical exploratory notebooks; not needed to run the pipeline or the tests.
 notebooks = [

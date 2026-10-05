@@ -152,6 +152,8 @@ scripts/compare_strategies.py  rolling-origin strategy sweep
 scripts/measure_staleness.py   model decay by weeks since training
 scripts/measure_peak_error.py  stale vs refitted model at the busiest cluster's peak
 scripts/monitor_model.py       scheduled health check on the serving model
+scripts/fetch_weather.py       hourly Bengaluru weather from Open-Meteo, for the experiment below
+scripts/measure_weather.py     whether weather or holidays improve the forecast (they do not)
 tests/                    pytest suite (synthetic data only)
 Notebook/                 original exploratory notebooks (historical record)
 ```
