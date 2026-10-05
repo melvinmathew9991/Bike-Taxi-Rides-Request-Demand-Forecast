@@ -28,6 +28,14 @@ half-hourly counts is noisy enough that a single cluster crossing 1.0 is not, on
 its own, evidence that the model should be pulled - but it is the view that found
 cluster 30 losing to the baseline when the global number looked fine, so it is
 always reported.
+
+The level band applies per cluster only above `MIN_CLUSTER_VOLUME`. A replay
+drill on the real data - models trained 2, 4 and 6 weeks before the last week
+and scored on it - flagged the same 8 clusters at every staleness, all beating
+the baseline (MASE 0.69-0.88) and all among the quietest, at 0.3-2.8 requests
+per interval against a median of 10. At that volume over-forecasting by a
+fraction of a request doubles the ratio, so the band measures noise and would
+warn every week. Quiet clusters are still held to MASE.
 """
 
 from __future__ import annotations
@@ -52,6 +60,10 @@ from ML_Pipeline.serving import STALE_AFTER_DAYS, ServingState
 #: Level-ratio band outside which the model fails its health check.
 MIN_LEVEL_RATIO = 0.90
 MAX_LEVEL_RATIO = 1.10
+
+#: Mean requests per interval below which a cluster's level ratio is not
+#: checked: a cluster this quiet has Poisson noise on the scale of its mean.
+MIN_CLUSTER_VOLUME = 3.0
 
 #: Days of unseen demand scored. A whole week, so every weekday is represented
 #: once and the level ratio is not skewed by a weekend.
@@ -142,6 +154,7 @@ def check_health(
     days: int = DEFAULT_WINDOW_DAYS,
     min_level_ratio: float = MIN_LEVEL_RATIO,
     max_level_ratio: float = MAX_LEVEL_RATIO,
+    min_cluster_volume: float = MIN_CLUSTER_VOLUME,
 ) -> HealthReport:
     """
     Score the serving model on its most recent unseen demand.
@@ -259,27 +272,34 @@ def check_health(
     per_cluster = ModelEvaluator.per_cluster_error(
         window, pred, season_length=season, naive=naive_pred
     )
-    # A cluster with no demand all week has no level ratio; that is not a fault.
+    # The level band only where volume makes the ratio meaningful. A cluster
+    # with no demand all week has no ratio at all; neither is a fault.
     ratio = per_cluster["level_ratio"]
+    busy = per_cluster["mean_actual"] >= min_cluster_volume
     flagged = per_cluster[
         (per_cluster["mase"] >= 1.0)
-        | (ratio.notna() & ~ratio.between(min_level_ratio, max_level_ratio))
+        | (busy & ratio.notna() & ~ratio.between(min_level_ratio, max_level_ratio))
     ]
     report.clusters = [
         {k: _plain(v) for k, v in row.items()}
         for row in per_cluster.to_dict("records")
     ]
+    quiet = int((~busy).sum())
+    scope = (
+        f" ({quiet} below {min_cluster_volume:g} requests per interval held to "
+        "the baseline only)" if quiet else ""
+    )
     if len(flagged):
         report.add(
             "clusters", WARN,
             f"{len(flagged)} of {len(per_cluster)} clusters lose to the baseline "
-            f"or fall outside the {band} level band: "
+            f"or fall outside the {band} level band{scope}: "
             + ", ".join(f"#{int(c)}" for c in flagged[CLUSTER_COL].head(20)),
         )
     else:
         report.add(
             "clusters", PASS,
             f"All {len(per_cluster)} clusters beat the baseline within the "
-            f"{band} level band.",
+            f"{band} level band{scope}.",
         )
     return report

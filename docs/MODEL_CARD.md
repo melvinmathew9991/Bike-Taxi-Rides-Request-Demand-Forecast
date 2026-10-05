@@ -426,6 +426,17 @@ Conditions for use:
    level ratio outside 0.90-1.10. The 0.90 floor sits between weeks four (0.92)
    and five (0.87) of the staleness table above. Run it on a schedule; nothing
    in the repository schedules it.
+
+   A replay drill on 2026-10-05 trained models with the final refit off, 14, 29
+   and 43 days before the end of the data, and scored each on the last week
+   (2021-03-20 to 26). All three held MASE 0.76 and a level ratio of 0.98-0.99:
+   early 2021 showed no decay, unlike the 2020 origins of the table above. This
+   is no reason to relax the cadence - it is set by the worst case, and the
+   0.90 floor was not exercised. The drill did show that a per-cluster level
+   band is noise on quiet clusters: it flagged the same eight every time, all
+   beating the baseline, all under three requests per interval. The band now
+   applies only to clusters at or above that volume; quieter ones are held to
+   MASE alone.
 3. **Keep the horizon at or below two days.** The default is one day. The gain
    decays as the new lags start consuming the model's own predictions, and by a
    one-week horizon the model only ties the baseline — see the horizon table

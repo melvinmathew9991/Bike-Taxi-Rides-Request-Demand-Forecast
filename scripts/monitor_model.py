@@ -35,6 +35,7 @@ from ML_Pipeline.config import PipelineConfig  # noqa: E402
 from ML_Pipeline.monitoring import (  # noqa: E402
     DEFAULT_WINDOW_DAYS,
     MAX_LEVEL_RATIO,
+    MIN_CLUSTER_VOLUME,
     MIN_LEVEL_RATIO,
     check_health,
 )
@@ -57,6 +58,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--min-level-ratio", type=float, default=MIN_LEVEL_RATIO)
     parser.add_argument("--max-level-ratio", type=float, default=MAX_LEVEL_RATIO)
     parser.add_argument(
+        "--min-cluster-volume", type=float, default=MIN_CLUSTER_VOLUME,
+        help="Mean requests per interval below which a cluster's level ratio is "
+             f"not checked (default {MIN_CLUSTER_VOLUME:g})",
+    )
+    parser.add_argument(
         "--json", type=Path, default=None,
         help="Also write the full report, per-cluster rows included, to this file",
     )
@@ -73,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
             state, days=args.days,
             min_level_ratio=args.min_level_ratio,
             max_level_ratio=args.max_level_ratio,
+            min_cluster_volume=args.min_cluster_volume,
         )
     except ValueError as exc:
         logger.error("%s", exc)
