@@ -53,6 +53,19 @@ class Persistence:
         return pred
 
 
+class ConstantForOne(Persistence):
+    """Persistence, except a fixed value for one cluster."""
+
+    def __init__(self, cluster: int, value: float):
+        super().__init__()
+        self.only, self.value = cluster, value
+
+    def predict(self, X):
+        pred = super().predict(X)
+        pred[X[CLUSTER_COL].to_numpy() == self.only] = self.value
+        return pred
+
+
 class SeasonalNaive:
     """Is the baseline, so cannot beat it."""
 
@@ -60,8 +73,14 @@ class SeasonalNaive:
         return X[f"lag_{SEASON}"].to_numpy(dtype="float64")
 
 
-def build(tmp_path, model, *, data_through=None, features=FEATURES) -> pd.Timestamp:
-    """An output directory with a grid and a promoted bundle. Returns grid end."""
+def build(tmp_path, model, *, data_through=None, features=FEATURES,
+          quiet_cluster: int | None = None) -> pd.Timestamp:
+    """
+    An output directory with a grid and a promoted bundle. Returns grid end.
+
+    `quiet_cluster` becomes noise around one request per interval, like the
+    real grid's quietest clusters.
+    """
     version = "20260102_030405"
     stamps = STAMPS
     # Smooth, with a daily shape and growth: persistence beats same-time-last-week
@@ -78,6 +97,12 @@ def build(tmp_path, model, *, data_through=None, features=FEATURES) -> pd.Timest
             for i, t in enumerate(stamps)
         ]
     )
+    if quiet_cluster is not None:
+        rows = grid[CLUSTER_COL] == quiet_cluster
+        rng = np.random.default_rng(20261005)
+        grid.loc[rows, TARGET_COL] = np.clip(
+            1.0 + rng.normal(0, 0.8, rows.sum()), 0, None
+        )
     grid.to_csv(tmp_path / f"Data_Prepared_{version}.csv.gz", index=False,
                 compression="gzip")
 
@@ -165,6 +190,37 @@ class TestWhatItCatches:
         report = check_health(state_for(tmp_path))
         assert statuses(report)["clusters"] == WARN
         assert "#2" in next(c.detail for c in report.checks if c.name == "clusters")
+
+
+class TestQuietClusters:
+    """
+    The replay drill flagged the same quiet clusters every week: all beating the
+    baseline, all with level ratios of 1.2-2.1 on under three requests per
+    interval. The band is noise there, so it is not applied.
+    """
+
+    def test_over_forecasting_a_quiet_cluster_is_not_flagged(self, tmp_path):
+        build(tmp_path, ConstantForOne(cluster=0, value=1.3), quiet_cluster=0)
+        report = check_health(state_for(tmp_path))
+        row = next(r for r in report.clusters if r[CLUSTER_COL] == 0)
+        assert row["level_ratio"] > 1.1, "precondition: outside the band"
+        assert row["mase"] < 1.0, "precondition: beats the baseline"
+        assert statuses(report)["clusters"] == PASS
+        assert "1 below 3" in next(
+            c.detail for c in report.checks if c.name == "clusters"
+        )
+
+    def test_the_floor_is_what_spares_it(self, tmp_path):
+        build(tmp_path, ConstantForOne(cluster=0, value=1.3), quiet_cluster=0)
+        report = check_health(state_for(tmp_path), min_cluster_volume=0.0)
+        assert statuses(report)["clusters"] == WARN
+
+    def test_a_quiet_cluster_losing_to_the_baseline_is_still_flagged(self, tmp_path):
+        build(tmp_path, ConstantForOne(cluster=0, value=4.0), quiet_cluster=0)
+        report = check_health(state_for(tmp_path))
+        row = next(r for r in report.clusters if r[CLUSTER_COL] == 0)
+        assert row["mase"] >= 1.0
+        assert statuses(report)["clusters"] == WARN
 
 
 class TestItScoresOnlyUnseenDemand:
