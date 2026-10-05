@@ -28,6 +28,11 @@ STAGING="${STAGING:-deploy/.staging}"
 
 RUNTIME_SA="${RUNTIME_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 TAG="$(git rev-parse --short HEAD 2>/dev/null || date +%Y%m%d%H%M%S)"
+# Cloud Build uploads the working tree, so uncommitted changes are in the image;
+# say so in the tag rather than reuse the commit's.
+if ! git diff --quiet HEAD -- 2>/dev/null; then
+  TAG="${TAG}-dirty-$(date +%Y%m%d%H%M%S)"
+fi
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/api:${TAG}"
 G=(gcloud --project "$PROJECT_ID" --quiet)
 
@@ -59,7 +64,9 @@ step "Private bucket gs://${BUCKET}"
 step "API key in Secret Manager (${SECRET})"
 if ! "${G[@]}" secrets describe "$SECRET" >/dev/null 2>&1; then
   # Generated here and never printed; read it back with the command at the end.
-  openssl rand -base64 33 | tr -d '/+=\n' \
+  # \r too: Windows openssl ends its output with CRLF, and a key with a stray
+  # carriage return in it can never be matched by a client.
+  openssl rand -base64 33 | tr -d '/+=\r\n' \
     | "${G[@]}" secrets create "$SECRET" --replication-policy automatic --data-file=-
 fi
 
@@ -76,7 +83,12 @@ step "Runtime service account ${RUNTIME_SA}"
 step "Deploying ${SERVICE} to Cloud Run"
 # --allow-unauthenticated makes the URL reachable; the API key is what guards it.
 # max-instances caps the bill if the URL gets hammered.
-"${G[@]}" run deploy "$SERVICE" \
+#
+# Git Bash rewrites arguments that look like Unix paths, so mount-path=/app/output
+# reached Cloud Run as C:/Program Files/Git/app/output and was rejected. Only
+# the volume arguments are exempted: switching conversion off altogether
+# (MSYS_NO_PATHCONV) breaks gcloud's own wrapper. No effect outside Git Bash.
+MSYS2_ARG_CONV_EXCL="volume=" "${G[@]}" run deploy "$SERVICE" \
   --image "$IMAGE" --region "$REGION" --port 8000 \
   --cpu 1 --memory 1Gi --min-instances 0 --max-instances 2 --concurrency 20 \
   --execution-environment gen2 \
@@ -87,7 +99,7 @@ step "Deploying ${SERVICE} to Cloud Run"
   --add-volume-mount "volume=artifacts,mount-path=/app/output"
 
 URL="$("${G[@]}" run services describe "$SERVICE" --region "$REGION" --format 'value(status.url)')"
-KEY="$("${G[@]}" secrets versions access latest --secret "$SECRET")"
+KEY="$("${G[@]}" secrets versions access latest --secret "$SECRET" | tr -d '\r\n')"
 
 step "Checking the deployment"
 curl -fsS "${URL}/health"; echo

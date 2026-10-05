@@ -75,7 +75,7 @@ gcloud secrets versions access latest --secret biketaxi-api-key --project "$PROJ
 |---|---|
 | New model trained and promoted locally | re-run the deploy script |
 | Code change | re-run the deploy script |
-| Rotate the key | `openssl rand -base64 33 \| tr -d '/+=\n' \| gcloud secrets versions add biketaxi-api-key --data-file=- --project "$PROJECT_ID"`, then re-run the script so a new revision reads it |
+| Rotate the key | `openssl rand -base64 33 \| tr -d '/+=\r\n' \| gcloud secrets versions add biketaxi-api-key --data-file=- --project "$PROJECT_ID"`, then re-run the script so a new revision reads it |
 | Open the API to everyone (once the data source's terms allow it) | `gcloud run services update bike-taxi-forecast --region asia-south1 --remove-secrets BIKETAXI_API_KEY --project "$PROJECT_ID"` |
 
 ## Cost
@@ -109,6 +109,16 @@ gcloud projects delete "$PROJECT_ID"
 
 ## Troubleshooting
 
+- **`PERMISSION_DENIED` on the first run in a new project, as the project
+  owner.** Permissions on a just-enabled API take a minute or two to
+  propagate. The first deployment hit this twice, at Artifact Registry and at
+  Cloud Build. Wait a minute and re-run; the script resumes where it stopped.
+- **Running from Git Bash on Windows.** Two things the first deployment found
+  and the script now handles: Git Bash rewrites Unix-looking arguments, which
+  turned the `/app/output` mount path into a Windows path (only the volume
+  arguments are exempted - turning conversion off altogether breaks gcloud's
+  own wrapper); and Windows `openssl` ends its output with CRLF, which put a
+  carriage return inside the first API key.
 - **Cloud Build fails with a permission error.** New projects build as the
   Compute Engine default service account. Grant it
   `roles/artifactregistry.writer`, `roles/storage.objectViewer` and
