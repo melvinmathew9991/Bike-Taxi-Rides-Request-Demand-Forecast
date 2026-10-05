@@ -126,6 +126,9 @@ docker run -d -p 8000:8000 -v "$PWD/output:/app/output:ro" \
   -e BIKETAXI_API_KEY=<key> bike-taxi-forecast
 ```
 
+To host it, [deploy/README.md](deploy/README.md) deploys to Cloud Run with one
+script, serving from a private bucket that holds only aggregated files.
+
 `output/` is mounted, never baked in: it holds booking-level personal data. A
 registry written on Windows loads in the Linux container - model paths that do
 not exist as written are looked up by file name in the output directory.
@@ -185,6 +188,8 @@ scripts/measure_peak_error.py  stale vs refitted model at the busiest cluster's 
 scripts/monitor_model.py       scheduled health check on the serving model
 scripts/registry.py            list, promote and roll back models
 scripts/build_smoke_output.py  synthetic output directory for the container smoke test
+scripts/stage_demo_output.py   aggregated-only files for a hosted demo
+deploy/gcp_deploy.sh           build, upload and deploy to Cloud Run
 scripts/fetch_weather.py       hourly Bengaluru weather from Open-Meteo, for the experiment below
 scripts/measure_weather.py     whether weather or holidays improve the forecast (they do not)
 tests/                    pytest suite (synthetic data only)

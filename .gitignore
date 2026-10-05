@@ -47,3 +47,5 @@ WORKLOG.md
 # OS files
 .DS_Store
 Thumbs.db
+# Staged demo upload (scripts/stage_demo_output.py)
+/deploy/.staging/
