@@ -76,6 +76,9 @@ they cannot memorise an individual's movements.
   (`TestDataMinimisation`) now holds it.
 - `data_prep_advanced.CLEANED_COLUMNS` is an explicit allow-list, so a new
   upstream column cannot silently start being written to disk.
+- **Cleaning keeps only pickups inside Bengaluru** (`advanced_cleanup` Rule 6,
+  `BENGALURU_BBOX`). 156,740 cleaned bookings (4.05%) were in other cities;
+  the model is not for them, so they are no longer carried past cleaning.
 - `streamlit_app.assert_no_personal_data()` refuses to render any file
   containing `number`, `pick_lat`, `pick_lng`, `drop_lat` or `drop_lng`. The
   dashboard therefore cannot expose personal data even if pointed at a
@@ -99,9 +102,52 @@ point of the boundary.
 **Storage limitation.** Booking-level data should carry a retention period and
 be deleted at its end. The aggregated grid may be retained indefinitely.
 
-**Never send this data to a third-party service** — including hosted notebooks,
-model APIs, or file-sharing links — without a lawful basis and a data-processing
-agreement.
+**Never send booking-level data to a third-party service** — including hosted
+notebooks, model APIs, cloud storage or file-sharing links — without a lawful
+basis and a data-processing agreement. Aggregated files are a different
+matter; the hosted demo below is the one place they leave this machine.
+
+### The hosted demo (Google Cloud)
+
+Since 2026-10-05 the forecast API runs on Cloud Run in project
+`bike-taxi-demand-demo-ao2r`, region `asia-south1` (Mumbai). What is in the
+cloud, and how it got there:
+
+| Where | What | Who can read it |
+|---|---|---|
+| Cloud Storage `gs://bike-taxi-demand-demo-ao2r-demo-artifacts` (private, public access prevention enforced) | the last 14 days of the demand grid, the promoted model, the 50 cluster centres, the promoted registry entry — ~0.8 MB | the project owner; the API's runtime service account (read-only); and, through its project-wide Editor role, the default Compute Engine service account that Cloud Build runs as |
+| Artifact Registry (private) | the API image: code and libraries, no data | the project owner, and project editors (the default Compute Engine service account) |
+| Secret Manager | the API key | the project owner, and the runtime service account — Editor does not include reading secrets |
+| Cloud Run (public URL) | forecasts and model metadata, behind the API key | anyone with the key; `/health` is open |
+
+- **Nothing booking-level is uploaded.** `scripts/stage_demo_output.py` copies
+  an allow-list, never `clean_data_*`, and refuses a grid with any column
+  outside the aggregated set. `.gcloudignore` keeps `data/` and `output/` out of
+  the source Cloud Build receives, and `.dockerignore` keeps them out of the
+  image.
+- **The clustering model is uploaded as its centres only.** The fitted object
+  also holds a cluster label for each of the 3,709,432 training bookings;
+  serving never reads them, so they stay local.
+- **The model is trained here and uploaded**, not trained in the cloud.
+
+Tear-down removes all of it: `gcloud projects delete bike-taxi-demand-demo-ao2r`.
+
+### Open items
+
+- **The dataset's source and licence are not recorded.** They decide whether
+  forecasts from it may be shown publicly, which is why the demo API needs a
+  key. Record them here once known.
+- **No retention period is set** for the booking-level files in `data/` and
+  `output/`, as the storage-limitation rule above requires.
+- **The default Compute Engine service account holds Editor on the whole
+  project**, granted automatically when the project was created, so it can read
+  the bucket. Checked on 2026-10-05 with
+  `gcloud projects get-iam-policy bike-taxi-demand-demo-ao2r`. For aggregated
+  data this is acceptable; least privilege would replace it with the build
+  roles listed in `deploy/README.md`'s troubleshooting.
+- **`clean_data_<version>.csv.gz` is not deleted automatically** after
+  aggregation. Each training run leaves another ~100 MB copy of booking-level
+  coordinates in `output/`.
 
 ## 4. Ethical considerations
 
@@ -113,7 +159,8 @@ the *next* training round sees lower demand there and predicts lower still.
 Because the target is fulfilled requests rather than latent demand, this is
 self-reinforcing. Areas that are already under-served are the ones most exposed.
 
-*Mitigation:* monitor forecast error by cluster over time, and treat a cluster
+*Mitigation:* monitor forecast error by cluster over time
+(`scripts/monitor_model.py` reports it every run), and treat a cluster
 whose predicted demand is falling monotonically as a candidate feedback loop
 rather than a genuine trend. Where possible, log unfulfilled requests and search
 events, not just completed bookings, so the target approximates real demand.
@@ -126,8 +173,9 @@ global RMSE hides systematically worse service at the edges.
 *Mitigation:* report error per cluster, and weight peripheral clusters
 explicitly if service equity is an objective.
 
-**Automation bias.** The model explains under half the variance in the target
-(see `MODEL_CARD.md`). It is decision *support*, not a decision maker, and
+**Automation bias.** The model explains 0.88 of the variance one step ahead,
+and less the further it forecasts (see `MODEL_CARD.md`). It is decision
+*support*, not a decision maker, and
 should not be used for anything consequential to an individual — such as
 individual rider pay or penalties.
 

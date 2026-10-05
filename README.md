@@ -12,11 +12,31 @@ raw bookings
   -> forecast a horizon             (prediction_pipeline)
 ```
 
+## Live demo
+
+The forecast API runs on Google Cloud Run:
+**https://bike-taxi-forecast-mu5g6m6liq-el.a.run.app** — interactive docs at
+[`/docs`](https://bike-taxi-forecast-mu5g6m6liq-el.a.run.app/docs).
+
+- Every endpoint but `/health` currently needs an API key (`X-API-Key` header),
+  available on request, until the dataset's terms are confirmed to allow
+  public forecasts.
+- The data ends on 2021-03-26, so forecasts are for 2021-03-27 onwards. It is a
+  frozen demo, not a live service, and after 28 days it reports itself stale.
+- It serves only aggregated files from a private bucket; no booking-level data
+  is in the cloud. See [deploy/README.md](deploy/README.md).
+
+```bash
+curl https://bike-taxi-forecast-mu5g6m6liq-el.a.run.app/health
+curl -H "X-API-Key: <key>" \
+  "https://bike-taxi-forecast-mu5g6m6liq-el.a.run.app/forecast?steps=48&cluster=7"
+```
+
 ## Quick start
 
 ```bash
 pip install -r requirements-dev.txt        # or requirements.txt to run, not test
-pytest                                    # 273 tests, no data needed
+pytest                                    # 327 tests, no data needed
 python run_pipeline.py --raw-data data/raw_data.csv --n-clusters 50
 streamlit run streamlit_app.py            # dashboard, incl. model performance
 ```
@@ -32,6 +52,7 @@ immediately. To supply your own input see [docs/DATA_SCHEMA.md](docs/DATA_SCHEMA
 | [docs/DATA_GOVERNANCE.md](docs/DATA_GOVERNANCE.md) | What personal data this handles, where it stops, handling rules, ethical considerations. **Read before working with the data.** |
 | [docs/MODEL_CARD.md](docs/MODEL_CARD.md) | Intended use, evaluation approach, known limitations. |
 | [docs/DATA_SCHEMA.md](docs/DATA_SCHEMA.md) | Input and output formats. |
+| [deploy/README.md](deploy/README.md) | Deploying the API to Google Cloud Run: what is uploaded, setup, cost, updating, teardown. |
 
 ## Usage
 
