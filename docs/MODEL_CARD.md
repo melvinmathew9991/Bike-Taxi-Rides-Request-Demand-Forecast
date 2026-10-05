@@ -496,8 +496,38 @@ on intervals above anything in the training data — see the stale-model section
 above. A tree's prediction is bounded by its leaves, and `lag_336` cannot carry a
 level the trees were never fitted on. That is one eight-week window and a
 0.010 MASE gain overall, which is no stronger evidence than the sweep's, so the
-target is unchanged. It is the first thing to re-test if peak under-forecasting
-persists with the final refit in place.
+target is unchanged.
+
+**Re-tested on 2026-10-05, after the final refit and the Bengaluru geofence,
+and still not adopted.** Peak under-forecasting persisted - the level target,
+refitted weekly, holds the busiest cluster's peak hours at 0.93 of actual over
+both the last 8 and the last 16 weeks (`scripts/measure_peak_error.py`). The
+ratio target over `rolling_mean` raised that to 0.98 and 0.96, and won one step
+ahead in every rolling-origin fold (`scripts/compare_strategies.py`, five
+folds, 24-hour recursive horizon):
+
+| fold | one step, level | one step, ratio | recursive, level | recursive, ratio | recursive level ratio, level / ratio |
+|---|---|---|---|---|---|
+| 1 | 0.768 | 0.761 | 0.813 | 0.799 | 0.85 / 0.92 |
+| 2 | 0.795 | 0.791 | 0.780 | 0.787 | 1.01 / 1.06 |
+| 3 | 0.741 | 0.720 | 0.771 | 0.755 | 0.85 / 0.93 |
+| 4 | 0.790 | 0.783 | 0.803 | 0.833 | 1.03 / 1.06 |
+| 5 | 0.780 | 0.768 | 0.812 | 0.806 | 0.92 / 0.97 |
+| **mean** | **0.775** | **0.764** | **0.796** | **0.796** | **0.93 / 0.99** |
+
+One step ahead the gain is real: 0.010 MASE, 5 of 5 folds, with a paired
+standard deviation of 0.007. Over a 24-hour recursive horizon it is a tie: mean
+difference +0.0002, 3 of 5 folds, paired standard deviation 0.019. The ratio
+target does not correct the peaks specifically; it raises the level everywhere.
+Where the level target under-forecast (folds 1, 3 and 5) that wins; where it
+was already at or above 1.0 (folds 2 and 4) it over-forecasts to 1.06 and
+loses. The pipeline and the API serve recursively, where there is nothing to
+gain, and adopting it would mean a ratio wrapper in the bundle, serving, the
+monitor and the dashboard.
+
+**If the use changes, so does the answer.** For a next-interval use alone -
+live dispatch, half an hour ahead - the ratio target over `rolling_mean` is the
+better model.
 
 Worth keeping in mind rather than discarding: if the lag set ever loses its weekly
 component — a coarser interval, a shorter history requirement — the ratio target
@@ -597,7 +627,9 @@ as a record of the original work.
    predict beyond the values they were fitted on. On a growing series the
    busiest clusters' peaks keep exceeding that range: refitted weekly, the model
    forecasts 0.87 of actual demand on intervals above anything it has seen. The
-   final refit narrows the gap but cannot close it; see the ratio target section.
+   final refit narrows the gap but cannot close it. The ratio target narrows it
+   further one step ahead but ties over a 24-hour horizon, so it is not
+   adopted; see the ratio target section.
 
 ## Ethical considerations
 
