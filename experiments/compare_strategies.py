@@ -12,7 +12,7 @@ Each strategy is evaluated two ways:
              the pipeline serves, and it is where a trend-anchored model fails.
 
 Usage:
-    python scripts/compare_strategies.py --data output/Data_Prepared_<ver>.csv \
+    python experiments/compare_strategies.py --data output/Data_Prepared_<ver>.csv \
         --cluster-model output/pickup_cluster_model_<ver>.joblib
 """
 
@@ -30,9 +30,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 import xgboost as xgb  # noqa: E402
+from common import BASE_PARAMS, FEATURES, LAGS, ROLLING_WINDOW, feature_names  # noqa: E402
 from joblib import load  # noqa: E402
 
-from ML_Pipeline.config import PipelineConfig  # noqa: E402
 from ML_Pipeline.features import (  # noqa: E402
     TARGET_COL,
     TS_COL,
@@ -40,7 +40,6 @@ from ML_Pipeline.features import (  # noqa: E402
     add_calendar_features,
     add_lag_features,
     attach_cluster_centroids,
-    build_feature_names,
 )
 from ML_Pipeline.utils import read_csv_any  # noqa: E402
 from ML_Pipeline.validation import (  # noqa: E402
@@ -51,21 +50,6 @@ from ML_Pipeline.validation import (  # noqa: E402
 
 logger = logging.getLogger("compare_strategies")
 
-#: Lags and rolling window come from PipelineConfig rather than being hardcoded.
-#: They were `(1, 2, 3)` here, which is why the sweep's published numbers went
-#: stale the moment the configured lag set gained the daily and weekly lags: the
-#: script kept measuring a feature set the pipeline no longer trains. Overridable
-#: with --lags so an older result can be reproduced deliberately.
-_CONFIG = PipelineConfig()
-LAGS: tuple[int, ...] = tuple(_CONFIG.lag_features)
-ROLLING_WINDOW = _CONFIG.rolling_window
-FEATURES: list[str] = build_feature_names(
-    use_lags=True, lags=LAGS, cluster_features=("cluster_lat", "cluster_lng")
-)
-BASE_PARAMS = dict(
-    max_depth=7, learning_rate=0.05, subsample=0.8, colsample_bytree=0.8,
-    n_estimators=250, min_child_weight=5, random_state=42, n_jobs=-1,
-)
 RECENT_DAYS = 56  # 8 weeks
 
 
@@ -161,9 +145,7 @@ def main() -> int:
     global LAGS, FEATURES
     if args.lags:
         LAGS = tuple(int(x) for x in args.lags.split(","))
-        FEATURES = build_feature_names(
-            use_lags=True, lags=LAGS, cluster_features=("cluster_lat", "cluster_lng")
-        )
+        FEATURES = feature_names(LAGS)
     logger.info(
         "Lags %s, rolling window %d, %d features: %s",
         LAGS, ROLLING_WINDOW, len(FEATURES), FEATURES,

@@ -27,8 +27,8 @@ percent of the test rows, so they are reported separately - the overall MASE
 would hide an effect confined to them.
 
 Usage:
-    python scripts/fetch_weather.py
-    python scripts/measure_weather.py \\
+    python experiments/fetch_weather.py
+    python experiments/measure_weather.py \\
         --data output/Data_Prepared_<ver>.csv.gz \\
         --cluster-model output/pickup_cluster_model_<ver>.joblib
 """
@@ -45,11 +45,10 @@ import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
-sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import holidays  # noqa: E402
 import xgboost as xgb  # noqa: E402
-from compare_strategies import BASE_PARAMS, FEATURES, LAGS, ROLLING_WINDOW  # noqa: E402
+from common import BASE_PARAMS, FEATURES, LAGS, ROLLING_WINDOW  # noqa: E402
 from joblib import load  # noqa: E402
 
 from ML_Pipeline.features import (  # noqa: E402

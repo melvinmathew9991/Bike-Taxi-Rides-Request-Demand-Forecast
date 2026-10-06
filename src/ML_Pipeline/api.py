@@ -53,6 +53,7 @@ import pandas as pd
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+from ML_Pipeline import __version__
 from ML_Pipeline.features import CLUSTER_COL, TS_COL
 from ML_Pipeline.forecast import PREDICTION_COL, forecast_recursive
 from ML_Pipeline.serving import (
@@ -156,7 +157,7 @@ app = FastAPI(
         "interval. Serves the model promoted in the registry, which cannot be a "
         "model that failed its deploy gate."
     ),
-    version="1.0.0",
+    version=__version__,
 )
 
 if _configured_key() is None:

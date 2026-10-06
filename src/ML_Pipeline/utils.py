@@ -3,8 +3,7 @@ Small shared helpers.
 
 Timestamp flooring and calendar features previously lived here *and* in
 `prediction_pipeline`, in copies that had already drifted (the serving copy
-handled fewer input types). Both now live once in `ML_Pipeline.features`; this
-module re-exports them so existing imports keep working.
+handled fewer input types). Both now live once in `ML_Pipeline.features`.
 
 The module-level `Nominatim(user_agent="OLABikes")` geocoder that used to be
 instantiated here on import - and in two other modules - has been removed. It
@@ -19,11 +18,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from ML_Pipeline.features import (  # noqa: F401  (re-exported for compatibility)
-    add_calendar_features,
-    floor_to_interval,
-)
-
 EARTH_RADIUS_KM = 6371.0088
 
 #: Magic bytes at the start of a gzip member.
@@ -35,7 +29,7 @@ def read_csv_any(source, **kwargs) -> pd.DataFrame:
     Read a CSV whose compression is not reliably indicated by its name.
 
     Four near-identical copies of this logic existed - in `pipeline`,
-    `prediction_pipeline`, `streamlit_app` and `scripts/compare_strategies` -
+    `prediction_pipeline`, `streamlit_app` and `experiments/compare_strategies` -
     each a `try` on gzip with a fallback to plain. They existed because the
     pipeline wrote gzip-compressed files under a bare `.csv` extension, which
     `pandas` cannot infer from, so a plain `pd.read_csv` on one failed with
@@ -128,16 +122,3 @@ def haversine_km(
     a = np.sin(dlat / 2.0) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlng / 2.0) ** 2
     return 2.0 * EARTH_RADIUS_KM * np.arcsin(np.sqrt(np.clip(a, 0.0, 1.0)))
 
-
-def geodestic_distance(pick_lat, pick_lng, drop_lat, drop_lng) -> float:
-    """
-    Scalar great-circle distance in kilometres.
-
-    Retained for compatibility; prefer `haversine_km` on arrays.
-    """
-    return float(np.round(haversine_km(pick_lat, pick_lng, drop_lat, drop_lng), 2))
-
-
-def round_timestamp_30interval(x):
-    """Deprecated: use `features.floor_to_interval`, which is vectorised."""
-    return floor_to_interval([x], 30).iloc[0]
