@@ -1,13 +1,17 @@
 [build-system]
-requires = ["setuptools>=68"]
+# 77 is the first release to accept an SPDX string for `license`.
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "bike-taxi-demand-forecast"
-version = "1.0.0"
+# Read from ML_Pipeline.__version__, the one place the version is written.
+dynamic = ["version"]
 description = "Demand forecasting for bike-taxi ride requests"
 requires-python = ">=3.10"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 
 # The real dependency set, previously absent: `pip install .` produced a package
 # that imported nothing, because the pins lived only in requirements.txt where
@@ -53,7 +57,7 @@ dev = [
     "ruff>=0.4,<1.0",
     # fastapi.testclient needs httpx; without it the API tests cannot run.
     "httpx>=0.24,<1.0",
-    # Karnataka holiday calendar for scripts/measure_weather.py. Not a pipeline
+    # Karnataka holiday calendar for experiments/measure_weather.py. Not a pipeline
     # dependency: the experiment found holidays not worth adding as a feature.
     "holidays>=0.50,<1.0",
 ]
@@ -66,6 +70,9 @@ notebooks = [
 
 [tool.setuptools]
 package-dir = { "" = "src" }
+
+[tool.setuptools.dynamic]
+version = { attr = "ML_Pipeline.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -93,7 +100,7 @@ target-version = "py310"
 # The notebooks are a historical record of the original exploratory analysis,
 # not maintained source. They are excluded rather than rewritten, so the lint
 # signal reflects the code that is actually maintained.
-extend-exclude = ["Notebook"]
+extend-exclude = ["notebooks"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

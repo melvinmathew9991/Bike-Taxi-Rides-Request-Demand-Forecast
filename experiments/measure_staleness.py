@@ -25,7 +25,7 @@ within-horizon steps consume the model's own predictions. One-step scores are
 reported alongside for comparison with the published table.
 
 Usage:
-    python scripts/measure_staleness.py \\
+    python experiments/measure_staleness.py \\
         --data output/Data_Prepared_<ver>.csv.gz \\
         --cluster-model output/pickup_cluster_model_<ver>.joblib
 """

@@ -10,9 +10,10 @@ logs/
 *.pkl
 
 # Not needed to serve forecasts.
-Notebook/
+notebooks/
 tests/
 scripts/
+experiments/
 docs/
 streamlit_app.py
 requirements*.txt

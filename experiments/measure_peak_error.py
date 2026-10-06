@@ -25,7 +25,7 @@ ratio targets close it, the ceiling was. One-step scoring throughout: the lags
 are observed values, which is how the deploy gate measures too.
 
 Usage:
-    python scripts/measure_peak_error.py \\
+    python experiments/measure_peak_error.py \\
         --data output/Data_Prepared_<ver>.csv.gz \\
         --cluster-model output/pickup_cluster_model_<ver>.joblib
 """
@@ -44,7 +44,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 import xgboost as xgb  # noqa: E402
-from compare_strategies import BASE_PARAMS, FEATURES, LAGS, ROLLING_WINDOW  # noqa: E402
+from common import BASE_PARAMS, FEATURES, LAGS, ROLLING_WINDOW  # noqa: E402
 from joblib import load  # noqa: E402
 
 from ML_Pipeline.config import PipelineConfig  # noqa: E402

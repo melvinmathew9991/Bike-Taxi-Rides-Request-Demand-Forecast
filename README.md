@@ -36,7 +36,7 @@ curl -H "X-API-Key: <key>" \
 
 ```bash
 pip install -r requirements-dev.txt        # or requirements.txt to run, not test
-pytest                                    # 327 tests, no data needed
+pytest                                    # 329 tests, no data needed
 python run_pipeline.py --raw-data data/raw_data.csv --n-clusters 50
 streamlit run streamlit_app.py            # dashboard, incl. model performance
 ```
@@ -53,6 +53,8 @@ immediately. To supply your own input see [docs/DATA_SCHEMA.md](docs/DATA_SCHEMA
 | [docs/MODEL_CARD.md](docs/MODEL_CARD.md) | Intended use, evaluation approach, known limitations. |
 | [docs/DATA_SCHEMA.md](docs/DATA_SCHEMA.md) | Input and output formats. |
 | [deploy/README.md](deploy/README.md) | Deploying the API to Google Cloud Run: what is uploaded, setup, cost, updating, teardown. |
+| [experiments/README.md](experiments/README.md) | The measurements behind the model card, and how to re-run them. |
+| [CHANGELOG.md](CHANGELOG.md) | What changed in each merged pull request. |
 
 ## Usage
 
@@ -197,24 +199,23 @@ src/ML_Pipeline/
   model_training.py       trains both model variants
   xgb_model.py            XGBoost fitting with early stopping
   evaluation.py           metrics, baselines, prediction validation
+  validation.py           rolling-origin validation
   clustering.py           offline cluster-count diagnostics
   api.py                  forecast serving API (FastAPI)
+  serving.py              the promoted model and its history, shared by API and dashboard
   monitoring.py           health checks on the serving model
 run_pipeline.py           CLI entry point
 streamlit_app.py          dashboard
-scripts/smoke_run.py      manual full run against real data
-scripts/compare_strategies.py  rolling-origin strategy sweep
-scripts/measure_staleness.py   model decay by weeks since training
-scripts/measure_peak_error.py  stale vs refitted model at the busiest cluster's peak
-scripts/monitor_model.py       scheduled health check on the serving model
-scripts/registry.py            list, promote and roll back models
-scripts/build_smoke_output.py  synthetic output directory for the container smoke test
-scripts/stage_demo_output.py   aggregated-only files for a hosted demo
-deploy/gcp_deploy.sh           build, upload and deploy to Cloud Run
-scripts/fetch_weather.py       hourly Bengaluru weather from Open-Meteo, for the experiment below
-scripts/measure_weather.py     whether weather or holidays improve the forecast (they do not)
+scripts/                  operational tools
+  registry.py             list, promote and roll back models
+  monitor_model.py        scheduled health check on the serving model
+  stage_demo_output.py    aggregated-only files for a hosted demo
+  smoke_run.py            manual full run against real data
+  build_smoke_output.py   synthetic output directory for the container smoke test
+experiments/              one-off measurements behind the model card (see experiments/README.md)
+deploy/gcp_deploy.sh      build, upload and deploy to Cloud Run
 tests/                    pytest suite (synthetic data only)
-Notebook/                 original exploratory notebooks (historical record)
+notebooks/                original exploratory notebooks (historical record)
 ```
 
 ## Modelling notes
@@ -282,7 +283,7 @@ last week" should not ship.
 > reaching 0.92 by week four while MASE still looks fine. Measured across three
 > freeze origins: the weekly lag improved mean decay a great deal, but the worst
 > origin still loses to the baseline by week six, and a cadence follows the worst
-> case. Reproduce with `scripts/measure_staleness.py`.
+> case. Reproduce with `experiments/measure_staleness.py`.
 >
 > Until 2026-10-03 no model could meet that cadence: the saved model was the
 > scored one, which never saw the test window, so every model started ten weeks
@@ -293,6 +294,12 @@ last week" should not ship.
 > model registry, and `run_pipeline.py` exits **3** when the model loses, so
 > automation can refuse to promote it. Error per cluster is reported alongside.
 > See [docs/MODEL_CARD.md](docs/MODEL_CARD.md) for the measured numbers.
+
+## Licence
+
+The code is released under the [MIT licence](LICENSE). The licence covers the
+code only. It grants nothing over the booking data, whose source and terms are
+not recorded; see [docs/DATA_GOVERNANCE.md](docs/DATA_GOVERNANCE.md).
 
 ## Development
 

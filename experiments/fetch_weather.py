@@ -13,7 +13,7 @@ Open-Meteo's hourly `precipitation` and `rain` are the total over the
 *preceding* hour: the value stamped 15:00 fell between 14:00 and 15:00.
 
 Usage:
-    python scripts/fetch_weather.py --out data/weather_bengaluru.csv
+    python experiments/fetch_weather.py --out data/weather_bengaluru.csv
 """
 
 from __future__ import annotations

@@ -305,7 +305,7 @@ provably better.
 ### Model staleness: the binding operational constraint
 
 Re-measured on 2026-10-02 against the current lag set, by
-`scripts/measure_staleness.py`. A model is frozen at an origin and scored on
+`experiments/measure_staleness.py`. A model is frozen at an origin and scored on
 successive weeks with no retraining, which is what a lapsed retraining schedule
 produces: the model still sees observed demand arrive, it simply is not refitted.
 
@@ -381,7 +381,7 @@ March; the model had never seen a count above 73 in that cluster and, across all
 clusters, never predicts above about 67. Over the last eight weeks 6.3% of the
 cluster's intervals exceeded its training maximum.
 
-Measured by `scripts/measure_peak_error.py`, walking forward a week at a time over
+Measured by `experiments/measure_peak_error.py`, walking forward a week at a time over
 the last eight weeks, one step ahead:
 
 | strategy | MASE | clusters losing | cluster 30 MASE | peak level ratio | level ratio above training max | max prediction |
@@ -430,7 +430,7 @@ Conditions for use:
    great deal — MASE 0.88 at six weeks against 1.23 before — but the worst origin
    still loses to seasonal-naive at **week six**, and a cadence follows the worst
    case. Four weeks leaves two weeks of margin. Reproduce with
-   `scripts/measure_staleness.py`.
+   `experiments/measure_staleness.py`.
 2. **Monitor `level_ratio` in production.** It degrades earliest and most
    visibly, well before RMSE does. `scripts/monitor_model.py` scores the serving
    model on the latest week of demand it was not fitted on. It exits 3 when the
@@ -501,9 +501,9 @@ target is unchanged.
 **Re-tested on 2026-10-05, after the final refit and the Bengaluru geofence,
 and still not adopted.** Peak under-forecasting persisted - the level target,
 refitted weekly, holds the busiest cluster's peak hours at 0.93 of actual over
-both the last 8 and the last 16 weeks (`scripts/measure_peak_error.py`). The
+both the last 8 and the last 16 weeks (`experiments/measure_peak_error.py`). The
 ratio target over `rolling_mean` raised that to 0.98 and 0.96, and won one step
-ahead in every rolling-origin fold (`scripts/compare_strategies.py`, five
+ahead in every rolling-origin fold (`experiments/compare_strategies.py`, five
 folds, 24-hour recursive horizon):
 
 | fold | one step, level | one step, ratio | recursive, level | recursive, ratio | recursive level ratio, level / ratio |
@@ -536,7 +536,7 @@ becomes relevant again, because the problem it solves would come back.
 
 ### Historical performance (pre-refactor, for reference)
 
-From the committed `Notebook/Model_Training.ipynb` outputs, under the **old**
+From the committed `notebooks/Model_Training.ipynb` outputs, under the **old**
 day-of-month split and hyperparameters:
 
 | Model | R² | RMSE train | RMSE test |
@@ -571,7 +571,7 @@ as a record of the original work.
    availability. Weather and holidays were measured and add nothing (item 2).
 2. **No exogenous features, and weather would not help.** This card used to
    expect rainfall to be the largest missing driver. Measured on 2026-10-05 with
-   `scripts/measure_weather.py`, it is not. Ten one-week folds from June 2020 to
+   `experiments/measure_weather.py`, it is not. Ten one-week folds from June 2020 to
    March 2021, chosen to cover the monsoon, scored one step ahead:
 
    | variant | MASE | vs base | better in | MASE, rainy intervals |
@@ -598,7 +598,7 @@ as a record of the original work.
    in for the whole city, so local showers are averaged away; and only the
    one-step mode was tested, though with demand this unresponsive to rain a
    longer horizon has nothing to gain either. Weather data is fetched by
-   `scripts/fetch_weather.py` into the git-ignored `data/`.
+   `experiments/fetch_weather.py` into the git-ignored `data/`.
 3. **Recursive serving needs 7 days of contiguous history per cluster.** A
    consequence of the weekly lag. Gaps are filled with zero and a warning, which
    is more consequential over a week than over the 90 minutes it used to be.
