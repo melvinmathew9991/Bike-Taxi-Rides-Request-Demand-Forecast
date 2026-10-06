@@ -1,7 +1,7 @@
 """
 Serving pipeline: booking-level test data -> demand forecasts.
 
-Orchestration only. Every transform is imported from `ML_Pipeline.features` so
+Orchestration only. Every transform is imported from `ML_Pipeline.modeling.features` so
 the serving path and the training path are provably the same code, and each
 model's feature contract travels with it in a `ModelBundle`.
 
@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 from joblib import load
 
-from ML_Pipeline.features import (
+from ML_Pipeline.modeling.features import (
     CLUSTER_COL,
     TARGET_COL,
     TS_COL,
@@ -31,7 +31,7 @@ from ML_Pipeline.features import (
     build_demand_grid,
     validate_grid,
 )
-from ML_Pipeline.forecast import (
+from ML_Pipeline.modeling.forecast import (
     forecast_direct,
     forecast_recursive,
 )

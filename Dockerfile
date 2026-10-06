@@ -59,4 +59,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
 b = json.load(urllib.request.urlopen('http://localhost:8000/health')); \
 sys.exit(0 if b.get('ready') else 1)"
 
-CMD ["uvicorn", "ML_Pipeline.api:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "ML_Pipeline.serving.api:app", "--host", "0.0.0.0", "--port", "8000"]

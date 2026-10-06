@@ -32,9 +32,9 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from ML_Pipeline.evaluation import ModelEvaluator
-from ML_Pipeline.features import CLUSTER_COL, TARGET_COL, TS_COL, ModelBundle
-from ML_Pipeline.forecast import PREDICTION_COL, forecast_recursive
+from ML_Pipeline.modeling.evaluation import ModelEvaluator
+from ML_Pipeline.modeling.features import CLUSTER_COL, TARGET_COL, TS_COL, ModelBundle
+from ML_Pipeline.modeling.forecast import PREDICTION_COL, forecast_recursive
 
 logger = logging.getLogger(__name__)
 

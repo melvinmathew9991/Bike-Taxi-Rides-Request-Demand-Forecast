@@ -12,8 +12,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ML_Pipeline.features import ModelBundle, build_feature_names
-from ML_Pipeline.forecast import (
+from ML_Pipeline.modeling.features import ModelBundle, build_feature_names
+from ML_Pipeline.modeling.forecast import (
     PREDICTION_COL,
     backtest_recursive,
     forecast_direct,

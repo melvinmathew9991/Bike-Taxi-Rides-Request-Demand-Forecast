@@ -13,10 +13,10 @@ import pandas as pd
 import pytest
 
 from ML_Pipeline.config import PipelineConfig
-from ML_Pipeline.features import ModelBundle
-from ML_Pipeline.model_training import model_training
+from ML_Pipeline.modeling.features import ModelBundle
+from ML_Pipeline.modeling.prediction import prediction_pipeline
+from ML_Pipeline.modeling.training import model_training
 from ML_Pipeline.pipeline import MLPipeline
-from ML_Pipeline.prediction_pipeline import prediction_pipeline
 
 pytestmark = pytest.mark.slow
 
@@ -313,7 +313,7 @@ class TestEarlyStoppingRefit:
     """
 
     def _data(self):
-        from ML_Pipeline.features import add_calendar_features
+        from ML_Pipeline.modeling.features import add_calendar_features
         stamps = pd.date_range("2021-01-01", periods=2000, freq="30min")
         df = add_calendar_features(pd.DataFrame({"ts": stamps}), "ts")
         # Strongly trending target, as in the real dataset. Clipped at 0 because
@@ -323,7 +323,7 @@ class TestEarlyStoppingRefit:
         return df
 
     def test_refit_uses_every_training_row(self):
-        from ML_Pipeline.xgb_model import train_xgb
+        from ML_Pipeline.modeling.xgb_model import train_xgb
         df = self._data()
         feats = ["hour", "dayofweek", "mins", "month", "quarter"]
         tr, va = df.iloc[:1500], df.iloc[1500:]
@@ -336,7 +336,7 @@ class TestEarlyStoppingRefit:
         assert refit.training_rows == len(tr) + len(va)
 
     def test_no_refit_option_trains_on_less(self):
-        from ML_Pipeline.xgb_model import train_xgb
+        from ML_Pipeline.modeling.xgb_model import train_xgb
         df = self._data()
         feats = ["hour", "dayofweek", "mins", "month", "quarter"]
         tr, va = df.iloc[:1500], df.iloc[1500:]
@@ -352,7 +352,7 @@ class TestEarlyStoppingRefit:
     def test_validation_metrics_are_pre_refit(self):
         """After refitting, validation rows are in-sample; the recorded numbers
         must come from the model that had not yet seen them."""
-        from ML_Pipeline.xgb_model import train_xgb
+        from ML_Pipeline.modeling.xgb_model import train_xgb
         df = self._data()
         feats = ["hour", "dayofweek", "mins", "month", "quarter"]
         tr, va = df.iloc[:1500], df.iloc[1500:]

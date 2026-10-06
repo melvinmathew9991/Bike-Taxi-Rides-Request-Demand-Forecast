@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ML_Pipeline.advanced_cleanup import (
+from ML_Pipeline.data.cleaning_rules import (
     BENGALURU_BBOX,
     INDIA_BBOX,
     KARNATAKA_BBOX,
@@ -28,7 +28,7 @@ from ML_Pipeline.advanced_cleanup import (
     MIN_TRIP_DISTANCE_KM,
     advanced_cleanup,
 )
-from ML_Pipeline.shift_time import shift_time
+from ML_Pipeline.data.shift_time import shift_time
 from ML_Pipeline.utils import haversine_km
 
 # Two points ~1.4 km apart in Bangalore, comfortably inside every bounding box.

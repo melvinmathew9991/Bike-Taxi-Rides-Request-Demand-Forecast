@@ -7,8 +7,8 @@ from datetime import datetime
 
 import pandas as pd
 
-from ML_Pipeline.features import add_calendar_features
-from ML_Pipeline.shift_time import shift_time
+from ML_Pipeline.data.shift_time import shift_time
+from ML_Pipeline.modeling.features import add_calendar_features
 from ML_Pipeline.utils import convert_into_datetime, convert_into_numeric, remove_duplicates
 
 logger = logging.getLogger(__name__)

@@ -47,15 +47,15 @@ import xgboost as xgb
 from common import BASE_PARAMS, FEATURES, LAGS, ROLLING_WINDOW
 from joblib import load
 
-from ML_Pipeline.features import (
+from ML_Pipeline.modeling.features import (
     TARGET_COL,
     TS_COL,
     add_calendar_features,
     add_lag_features,
     attach_cluster_centroids,
 )
+from ML_Pipeline.modeling.validation import rolling_origins
 from ML_Pipeline.utils import read_csv_any
-from ML_Pipeline.validation import rolling_origins
 
 logger = logging.getLogger("measure_weather")
 

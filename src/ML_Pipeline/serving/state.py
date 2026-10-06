@@ -1,7 +1,7 @@
 """
 Resolving the model that is actually serving.
 
-Split out of `ML_Pipeline.api` so it can be used without a web stack. The
+Split out of `ML_Pipeline.serving.api` so it can be used without a web stack. The
 dashboard needs the same three things the API does - the promoted model, the
 history its lags read from, and the cluster centroids - and should not have to
 install FastAPI to get them. One definition, two consumers.
@@ -22,7 +22,7 @@ from joblib import load
 
 from ML_Pipeline.artifacts import latest_artifact
 from ML_Pipeline.config import PipelineConfig, max_horizon_steps
-from ML_Pipeline.features import CLUSTER_COL, TARGET_COL, TS_COL, ModelBundle
+from ML_Pipeline.modeling.features import CLUSTER_COL, TARGET_COL, TS_COL, ModelBundle
 from ML_Pipeline.registry import ModelRegistry
 from ML_Pipeline.utils import read_csv_any
 

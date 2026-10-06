@@ -43,8 +43,8 @@ import xgboost as xgb
 from joblib import load
 
 from ML_Pipeline.config import PipelineConfig
-from ML_Pipeline.evaluation import ModelEvaluator
-from ML_Pipeline.features import (
+from ML_Pipeline.modeling.evaluation import ModelEvaluator
+from ML_Pipeline.modeling.features import (
     CLUSTER_COL,
     TARGET_COL,
     TS_COL,
@@ -54,7 +54,7 @@ from ML_Pipeline.features import (
     attach_cluster_centroids,
     build_feature_names,
 )
-from ML_Pipeline.forecast import PREDICTION_COL, forecast_recursive
+from ML_Pipeline.modeling.forecast import PREDICTION_COL, forecast_recursive
 from ML_Pipeline.utils import read_csv_any
 
 logger = logging.getLogger("measure_staleness")
@@ -181,7 +181,7 @@ def main() -> int:
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
-    logging.getLogger("ML_Pipeline.forecast").setLevel(logging.WARNING)
+    logging.getLogger("ML_Pipeline.modeling.forecast").setLevel(logging.WARNING)
 
     config = PipelineConfig()
     offsets = [int(x) for x in args.offsets.split(",")]

@@ -26,7 +26,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from ML_Pipeline.advanced_cleanup import advanced_cleanup
+from ML_Pipeline.data.cleaning_rules import advanced_cleanup
+from ML_Pipeline.governance import PERSONAL_DATA_COLUMNS
 
 logger = logging.getLogger(__name__)
 
@@ -36,12 +37,6 @@ CLEANED_COLUMNS: tuple[str, ...] = (
     "ts", "number", "pick_lat", "pick_lng", "drop_lat", "drop_lng",
     "geodesic_distance", "hour", "mins", "month", "quarter", "dayofweek",
     "booking_timestamp", "booking_time_diff_hr", "booking_time_diff_min",
-)
-
-#: Personal-data columns, called out so the governance boundary is visible here
-#: rather than only in a document.
-PERSONAL_DATA_COLUMNS: frozenset[str] = frozenset(
-    {"number", "pick_lat", "pick_lng", "drop_lat", "drop_lng"}
 )
 
 

@@ -18,8 +18,9 @@ import pytest
 from joblib import dump
 
 from ML_Pipeline.config import PipelineConfig
-from ML_Pipeline.features import CLUSTER_COL, TARGET_COL, TS_COL, ModelBundle
-from ML_Pipeline.monitoring import (
+from ML_Pipeline.modeling.features import CLUSTER_COL, TARGET_COL, TS_COL, ModelBundle
+from ML_Pipeline.registry import ModelRegistry
+from ML_Pipeline.serving.monitoring import (
     FAIL,
     PASS,
     SKIPPED,
@@ -27,8 +28,7 @@ from ML_Pipeline.monitoring import (
     MissingFeaturesError,
     check_health,
 )
-from ML_Pipeline.registry import ModelRegistry
-from ML_Pipeline.serving import ServingState
+from ML_Pipeline.serving.state import ServingState
 
 SEASON = 336
 N_CLUSTERS = 3

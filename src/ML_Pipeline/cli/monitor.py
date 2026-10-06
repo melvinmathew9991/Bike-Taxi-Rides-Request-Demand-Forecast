@@ -4,7 +4,7 @@
 Scores the promoted model on the most recent week of demand it has not been
 fitted on, and fails when it is stale, loses to seasonal-naive, or its level
 ratio leaves the band set from the model card's staleness curve. The checks and
-their thresholds are documented in `ML_Pipeline.monitoring`.
+their thresholds are documented in `ML_Pipeline.serving.monitoring`.
 
 Exit codes, so a scheduler can act on the result:
     0  healthy (per-cluster warnings may still be printed)
@@ -28,14 +28,14 @@ import sys
 from pathlib import Path
 
 from ML_Pipeline.config import PipelineConfig
-from ML_Pipeline.monitoring import (
+from ML_Pipeline.serving.monitoring import (
     DEFAULT_WINDOW_DAYS,
     MAX_LEVEL_RATIO,
     MIN_CLUSTER_VOLUME,
     MIN_LEVEL_RATIO,
     check_health,
 )
-from ML_Pipeline.serving import ServingState
+from ML_Pipeline.serving.state import ServingState
 
 logger = logging.getLogger(__name__)
 

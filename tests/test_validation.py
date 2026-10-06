@@ -6,8 +6,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ML_Pipeline.features import ModelBundle, build_feature_names
-from ML_Pipeline.validation import (
+from ML_Pipeline.modeling.features import ModelBundle, build_feature_names
+from ML_Pipeline.modeling.validation import (
     rolling_origin_validate,
     rolling_origin_validate_recursive,
     rolling_origins,

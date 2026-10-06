@@ -3,7 +3,7 @@ Small shared helpers.
 
 Timestamp flooring and calendar features previously lived here *and* in
 `prediction_pipeline`, in copies that had already drifted (the serving copy
-handled fewer input types). Both now live once in `ML_Pipeline.features`.
+handled fewer input types). Both now live once in `ML_Pipeline.modeling.features`.
 
 The module-level `Nominatim(user_agent="OLABikes")` geocoder that used to be
 instantiated here on import - and in two other modules - has been removed. It

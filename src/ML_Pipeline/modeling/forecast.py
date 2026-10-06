@@ -38,7 +38,7 @@ from collections.abc import Sequence
 import numpy as np
 import pandas as pd
 
-from ML_Pipeline.features import (
+from ML_Pipeline.modeling.features import (
     CLUSTER_COL,
     TARGET_COL,
     TS_COL,

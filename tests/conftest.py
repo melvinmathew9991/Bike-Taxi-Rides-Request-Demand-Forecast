@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ML_Pipeline.features import (
+from ML_Pipeline.modeling.features import (
     add_calendar_features,
     add_lag_features,
     build_demand_grid,

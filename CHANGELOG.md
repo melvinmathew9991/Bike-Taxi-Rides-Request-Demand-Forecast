@@ -6,29 +6,38 @@ commit messages.
 
 ## Unreleased
 
-### Added
-- A `biketaxi` command (also `python -m ML_Pipeline`) with four subcommands:
-  `run`, `registry`, `monitor` and `stage-demo`. Installed as a console script
-  by `pip install -e .`.
-
 ### Changed
-- `run_pipeline.py`, `scripts/registry.py`, `scripts/monitor_model.py` and
-  `scripts/stage_demo_output.py` moved into `ML_Pipeline.cli` (history kept).
-  `python run_pipeline.py` still works as a thin wrapper; the other three are
-  now `biketaxi registry`, `biketaxi monitor` and `biketaxi stage-demo`, with
-  the same options and exit codes.
-- No entry point puts `src/` on `sys.path` by hand any more; the package must be
-  installed, which both requirements files already do. The tests import it the
-  same way: `pythonpath` is gone from the pytest settings, and the tests that
-  loaded scripts by file path import modules instead.
-- `ModelRegistry` moved from `config.py` to `registry.py`, and the artefact
-  stems and `latest_artifact` / `latest_version` to `artifacts.py`. Saved models
-  reference only `ML_Pipeline.features`, so every existing model still loads.
-- `deploy/gcp_deploy.sh` stages through `python -m ML_Pipeline stage-demo`, and
-  checks the package is importable before creating anything in the cloud.
+- The package is split into subpackages. Module moves, old -> new:
+
+  | Was `ML_Pipeline.` | Now `ML_Pipeline.` |
+  |---|---|
+  | `data_prep_basic`, `shift_time`, `data_prep_advanced`, `data_prep_geospatial`, `clustering` | `data.prep_basic`, `data.shift_time`, `data.prep_advanced`, `data.prep_geospatial`, `data.clustering` |
+  | `advanced_cleanup` | `data.cleaning_rules` |
+  | `features`, `splitting`, `xgb_model`, `forecast`, `evaluation`, `validation` | `modeling.` + same name |
+  | `model_training`, `prediction_pipeline` | `modeling.training`, `modeling.prediction` |
+  | `api`, `serving`, `monitoring` | `serving.api`, `serving.state`, `serving.monitoring` |
+
+  Function and class names are unchanged. The API is now
+  `uvicorn ML_Pipeline.serving.api:app`, and the Dockerfile uses that.
+- The dashboard moved from one 969-line `streamlit_app.py` into
+  `ML_Pipeline.dashboard`, one module per page. `streamlit run streamlit_app.py`
+  is unchanged; the root file is now three lines.
+- The personal-data columns and the grid's allow-list are defined once, in the
+  new `ML_Pipeline.governance`, and read from there by the cleaning stage, the
+  dashboard and demo staging. They used to be written out in each of the three.
+
+### Kept working
+- `ML_Pipeline/features.py` remains as a one-line shim so that models pickled
+  before the split, which name `ML_Pipeline.features.ModelBundle`, still load -
+  including the one the hosted demo serves. New models record the new path.
 
 ## 2026-10-06
 
+- **#21** One `biketaxi` command (also `python -m ML_Pipeline`) with `run`,
+  `registry`, `monitor` and `stage-demo`, replacing `run_pipeline.py` (kept as a
+  wrapper) and three scripts. No entry point patches `sys.path`; the tests
+  import the installed package. `ModelRegistry` moved to `registry.py`, artefact
+  naming to `artifacts.py`.
 - **#20** Experiment scripts moved from `scripts/` to `experiments/`, with their
   shared settings in `experiments/common.py`, read from `PipelineConfig`
   instead of a hand-written copy of the XGBoost parameters (values unchanged).

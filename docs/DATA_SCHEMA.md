@@ -43,7 +43,7 @@ calendar features, and per-rider booking gaps.
 | `mins`, `hour`, `month`, `quarter`, `dayofweek` | int | Calendar features. |
 
 Rows = intervals x clusters, with zero-demand intervals present and equal to 0
-(not missing). `features.validate_grid` reports whether this holds.
+(not missing). `ML_Pipeline.modeling.features.validate_grid` reports whether this holds.
 
 ## Output: `output/data_{with,without}_lag_<version>.csv`
 
@@ -58,7 +58,7 @@ Forecasts. Adds:
 
 ## Models: `output/*.joblib`
 
-`prediction_model_*.joblib` hold a `features.ModelBundle` — the estimator plus
+`prediction_model_*.joblib` hold a `ML_Pipeline.modeling.features.ModelBundle` — the estimator plus
 its **ordered feature list**, lag settings, frequency, metrics and parameters.
 Serving builds its design matrix from that list, so a train/serve mismatch
 raises instead of silently reordering columns.

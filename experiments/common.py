@@ -16,7 +16,7 @@ experiments fit hundreds of models without early stopping, so they use a fixed
 from __future__ import annotations
 
 from ML_Pipeline.config import PipelineConfig
-from ML_Pipeline.features import build_feature_names
+from ML_Pipeline.modeling.features import build_feature_names
 
 _CONFIG = PipelineConfig()
 

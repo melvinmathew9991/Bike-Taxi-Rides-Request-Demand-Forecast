@@ -20,9 +20,9 @@ from joblib import dump, load
 from test_serving_api import build_output_dir
 
 from ML_Pipeline.config import PipelineConfig
-from ML_Pipeline.features import TS_COL
-from ML_Pipeline.model_training import model_training
-from ML_Pipeline.serving import STALE_AFTER_DAYS, ServingState
+from ML_Pipeline.modeling.features import TS_COL
+from ML_Pipeline.modeling.training import model_training
+from ML_Pipeline.serving.state import STALE_AFTER_DAYS, ServingState
 
 #: Absolute, because AppTest resolves a relative path against the calling file
 #: in some streamlit versions and against the working directory in others.
@@ -118,10 +118,10 @@ class TestDataLag:
     def test_the_api_reports_it(self, tmp_path, monkeypatch):
         from fastapi.testclient import TestClient
 
-        from ML_Pipeline.api import app
+        from ML_Pipeline.serving.api import app
 
         state = _state(tmp_path, data_through="2020-10-01T00:00:00")
-        monkeypatch.setattr("ML_Pipeline.api.get_state", lambda: state)
+        monkeypatch.setattr("ML_Pipeline.serving.api.get_state", lambda: state)
         client = TestClient(app)
 
         info = client.get("/model").json()
