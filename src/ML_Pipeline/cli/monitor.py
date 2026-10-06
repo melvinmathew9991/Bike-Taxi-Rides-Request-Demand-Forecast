@@ -1,6 +1,5 @@
-#!/usr/bin/env python
 """
-Check the serving model's health, for a scheduler to run.
+`biketaxi monitor`: check the serving model's health, for a scheduler to run.
 
 Scores the promoted model on the most recent week of demand it has not been
 fitted on, and fails when it is stale, loses to seasonal-naive, or its level
@@ -15,8 +14,8 @@ Exit codes, so a scheduler can act on the result:
     1  the check itself crashed
 
 Usage:
-    python scripts/monitor_model.py
-    python scripts/monitor_model.py --output-dir output --json output/health.json
+    biketaxi monitor
+    biketaxi monitor --output-dir output --json output/health.json
 """
 
 from __future__ import annotations
@@ -28,24 +27,23 @@ import os
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT / "src"))
-
-from ML_Pipeline.config import PipelineConfig  # noqa: E402
-from ML_Pipeline.monitoring import (  # noqa: E402
+from ML_Pipeline.config import PipelineConfig
+from ML_Pipeline.monitoring import (
     DEFAULT_WINDOW_DAYS,
     MAX_LEVEL_RATIO,
     MIN_CLUSTER_VOLUME,
     MIN_LEVEL_RATIO,
     check_health,
 )
-from ML_Pipeline.serving import ServingState  # noqa: E402
+from ML_Pipeline.serving import ServingState
 
-logger = logging.getLogger("monitor_model")
+logger = logging.getLogger(__name__)
 
 
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+def parse_args(argv: list[str] | None = None, prog: str | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog=prog, description="Check the serving model's health, for a scheduler to run."
+    )
     parser.add_argument(
         "--output-dir", default=os.environ.get("BIKETAXI_OUTPUT_DIR", "output"),
         help="Pipeline output directory holding the registry and demand grid "
@@ -69,8 +67,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = parse_args(argv)
+def main(argv: list[str] | None = None, prog: str | None = None) -> int:
+    args = parse_args(argv, prog)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
     try:

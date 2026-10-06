@@ -1,5 +1,5 @@
 """
-Tests for the command-line wiring in `run_pipeline.py`.
+Tests for the command-line wiring in `biketaxi run` (`ML_Pipeline.cli.run`).
 
 Nothing here fits a model or reads real data: these exercise how `--config` and
 the flags combine into a `PipelineConfig`. That path had no coverage, which is
@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import pytest
 
+from ML_Pipeline.cli.run import build_parser, config_from_args
 from ML_Pipeline.config import PipelineConfig
-from run_pipeline import build_parser, config_from_args
 
 
 def parse(*argv: str):

@@ -1,23 +1,17 @@
-"""Tests for scripts/registry.py, the promote and rollback command line."""
+"""Tests for `biketaxi registry`, the promote and rollback command line."""
 
 from __future__ import annotations
-
-import importlib.util
-from pathlib import Path
 
 import pytest
 from test_serving_api import add_promoted_model, build_output_dir
 
-from ML_Pipeline.config import ModelRegistry
+from ML_Pipeline.cli.registry import main as registry_main
+from ML_Pipeline.registry import ModelRegistry
 
 
 @pytest.fixture
 def cli():
-    path = Path(__file__).resolve().parents[1] / "scripts" / "registry.py"
-    spec = importlib.util.spec_from_file_location("registry_cli", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.main
+    return registry_main
 
 
 def production(tmp_path) -> str | None:

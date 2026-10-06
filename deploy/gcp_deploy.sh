@@ -9,7 +9,7 @@
 #
 # What ends up where:
 #   Artifact Registry (private)  the image - code only, no data
-#   Cloud Storage (private)      aggregated files from scripts/stage_demo_output.py,
+#   Cloud Storage (private)      aggregated files from `biketaxi stage-demo`,
 #                                mounted read-only at /app/output
 #   Secret Manager               the API key, read by the service at startup
 #   Cloud Run (public URL)       the API; every endpoint but /health needs the key
@@ -25,6 +25,14 @@ RUNTIME_SA_NAME="${RUNTIME_SA_NAME:-bike-taxi-api}"
 # Unquoted where used, so PYTHON="py -3.11" works.
 PYTHON="${PYTHON:-python3}"
 STAGING="${STAGING:-deploy/.staging}"
+
+# Staging runs locally through the installed package. Check before creating
+# anything in the cloud, rather than failing halfway through a deployment.
+if ! $PYTHON -c "import ML_Pipeline" 2>/dev/null; then
+  echo "ML_Pipeline is not importable with '$PYTHON'. Install it first:" >&2
+  echo "  $PYTHON -m pip install -e ." >&2
+  exit 1
+fi
 
 RUNTIME_SA="${RUNTIME_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 TAG="$(git rev-parse --short HEAD 2>/dev/null || date +%Y%m%d%H%M%S)"
@@ -51,7 +59,7 @@ step "Building ${IMAGE} with Cloud Build (no local Docker needed)"
 "${G[@]}" builds submit --tag "$IMAGE" .
 
 step "Staging aggregated files (never the booking-level data)"
-$PYTHON scripts/stage_demo_output.py --out "$STAGING"
+$PYTHON -m ML_Pipeline stage-demo --out "$STAGING"
 
 step "Private bucket gs://${BUCKET}"
 "${G[@]}" storage buckets describe "gs://${BUCKET}" >/dev/null 2>&1 \

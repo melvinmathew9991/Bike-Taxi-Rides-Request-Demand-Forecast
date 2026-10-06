@@ -29,7 +29,7 @@ import pandas as pd
 import pytest
 from joblib import dump
 
-from ML_Pipeline.config import ModelRegistry, PipelineConfig
+from ML_Pipeline.config import PipelineConfig
 from ML_Pipeline.evaluation import ModelEvaluator
 from ML_Pipeline.features import (
     CLUSTER_COL,
@@ -39,6 +39,7 @@ from ML_Pipeline.features import (
     add_calendar_features,
     add_lag_features,
 )
+from ML_Pipeline.registry import ModelRegistry
 from ML_Pipeline.serving import ServingState
 
 SEASON = 336

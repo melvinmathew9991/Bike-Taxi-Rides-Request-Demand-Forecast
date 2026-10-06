@@ -17,7 +17,7 @@ import pandas as pd
 import pytest
 from joblib import dump
 
-from ML_Pipeline.config import ModelRegistry, PipelineConfig
+from ML_Pipeline.config import PipelineConfig
 from ML_Pipeline.features import CLUSTER_COL, TARGET_COL, TS_COL, ModelBundle
 from ML_Pipeline.monitoring import (
     FAIL,
@@ -27,6 +27,7 @@ from ML_Pipeline.monitoring import (
     MissingFeaturesError,
     check_health,
 )
+from ML_Pipeline.registry import ModelRegistry
 from ML_Pipeline.serving import ServingState
 
 SEASON = 336
@@ -256,14 +257,9 @@ class TestWhenThereIsNothingToCheck:
 class TestTheCommandLine:
     @pytest.fixture
     def cli(self):
-        import importlib.util
-        from pathlib import Path
+        from ML_Pipeline.cli.monitor import main
 
-        path = Path(__file__).resolve().parents[1] / "scripts" / "monitor_model.py"
-        spec = importlib.util.spec_from_file_location("monitor_model", path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module.main
+        return main
 
     def test_healthy_exits_0_and_writes_the_report(self, tmp_path, cli):
         build(tmp_path, Persistence())

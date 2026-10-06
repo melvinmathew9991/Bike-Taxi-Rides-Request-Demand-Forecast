@@ -14,7 +14,7 @@ uploaded; the booking-level data never leaves your machine.
 
 ## What is uploaded, and what is not
 
-`scripts/stage_demo_output.py` builds the upload from an allow-list:
+`biketaxi stage-demo` builds the upload from an allow-list:
 
 | File | Contents | Size |
 |---|---|---|

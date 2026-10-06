@@ -5,7 +5,7 @@ The model card sets conditions for using the model, and two of them depended on
 someone remembering: retrain at least every four weeks, and monitor
 `level_ratio`, which degrades earliest of any metric as the model goes stale.
 `check_health` turns those into checks a scheduler can run and act on; the CLI
-wrapper is `scripts/monitor_model.py`.
+wrapper is `biketaxi monitor` (`ML_Pipeline.cli.monitor`).
 
 It scores the most recent `days` of observed demand, one step ahead, which is how
 the deploy gate and the model card's staleness curve are measured, so the numbers

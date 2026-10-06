@@ -18,11 +18,8 @@ import logging
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT / "src"))
-
-from ML_Pipeline.config import PipelineConfig  # noqa: E402
-from ML_Pipeline.pipeline import MLPipeline  # noqa: E402
+from ML_Pipeline.config import PipelineConfig
+from ML_Pipeline.pipeline import MLPipeline
 
 
 def main() -> int:

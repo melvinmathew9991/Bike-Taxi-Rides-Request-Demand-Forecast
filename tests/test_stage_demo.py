@@ -1,5 +1,5 @@
 """
-Tests for scripts/stage_demo_output.py, which decides what goes to the cloud.
+Tests for `biketaxi stage-demo`, which decides what goes to the cloud.
 
 The output directory mixes what serving needs with booking-level personal data.
 These pin that staging copies the allow-list and nothing else.
@@ -7,9 +7,7 @@ These pin that staging copies the allow-list and nothing else.
 
 from __future__ import annotations
 
-import importlib.util
 import json
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -18,17 +16,14 @@ import pytest
 from joblib import dump, load
 from test_serving_api import build_output_dir
 
+from ML_Pipeline.cli.stage_demo import main as stage_main
 from ML_Pipeline.config import PipelineConfig
 from ML_Pipeline.serving import ServingState
 
 
 @pytest.fixture
 def stage():
-    path = Path(__file__).resolve().parents[1] / "scripts" / "stage_demo_output.py"
-    spec = importlib.util.spec_from_file_location("stage_demo_output", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.main
+    return stage_main
 
 
 @pytest.fixture

@@ -25,15 +25,11 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import xgboost as xgb
+from common import BASE_PARAMS, FEATURES, LAGS, ROLLING_WINDOW, feature_names
+from joblib import load
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT / "src"))
-
-import xgboost as xgb  # noqa: E402
-from common import BASE_PARAMS, FEATURES, LAGS, ROLLING_WINDOW, feature_names  # noqa: E402
-from joblib import load  # noqa: E402
-
-from ML_Pipeline.features import (  # noqa: E402
+from ML_Pipeline.features import (
     TARGET_COL,
     TS_COL,
     ModelBundle,
@@ -41,8 +37,8 @@ from ML_Pipeline.features import (  # noqa: E402
     add_lag_features,
     attach_cluster_centroids,
 )
-from ML_Pipeline.utils import read_csv_any  # noqa: E402
-from ML_Pipeline.validation import (  # noqa: E402
+from ML_Pipeline.utils import read_csv_any
+from ML_Pipeline.validation import (
     rolling_origin_validate,
     rolling_origin_validate_recursive,
     summarise,

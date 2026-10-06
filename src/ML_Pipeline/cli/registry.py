@@ -1,15 +1,14 @@
-#!/usr/bin/env python
 """
-Inspect the model registry, promote a model, or roll back.
+`biketaxi registry`: inspect the model registry, promote a model, or roll back.
 
 Promotion and rollback were only reachable from Python, which is not where you
 want to be in the middle of an incident. After `promote` or `rollback`, tell a
 running API to load the change with `POST /reload` (or restart it).
 
 Usage:
-    python scripts/registry.py list
-    python scripts/registry.py promote xgb_with_lag_20261005_142518
-    python scripts/registry.py rollback
+    biketaxi registry list
+    biketaxi registry promote xgb_with_lag_20261005_142518
+    biketaxi registry rollback
 """
 
 from __future__ import annotations
@@ -19,9 +18,7 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-from ML_Pipeline.config import ModelRegistry  # noqa: E402
+from ML_Pipeline.registry import ModelRegistry
 
 
 def _list(registry: ModelRegistry) -> int:
@@ -48,8 +45,10 @@ def _list(registry: ModelRegistry) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+def main(argv: list[str] | None = None, prog: str | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog=prog, description="Inspect the model registry, promote a model, or roll back."
+    )
     parser.add_argument(
         "--output-dir", default=os.environ.get("BIKETAXI_OUTPUT_DIR", "output"),
         help="Directory holding model_registry.json (default: $BIKETAXI_OUTPUT_DIR "

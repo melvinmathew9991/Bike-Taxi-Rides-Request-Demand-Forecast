@@ -20,13 +20,10 @@ from typing import Any
 import pandas as pd
 from joblib import load
 
-from ML_Pipeline.config import (
-    ModelRegistry,
-    PipelineConfig,
-    latest_artifact,
-    max_horizon_steps,
-)
+from ML_Pipeline.artifacts import latest_artifact
+from ML_Pipeline.config import PipelineConfig, max_horizon_steps
 from ML_Pipeline.features import CLUSTER_COL, TARGET_COL, TS_COL, ModelBundle
+from ML_Pipeline.registry import ModelRegistry
 from ML_Pipeline.utils import read_csv_any
 
 logger = logging.getLogger(__name__)

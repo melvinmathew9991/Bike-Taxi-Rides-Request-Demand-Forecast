@@ -22,12 +22,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from ML_Pipeline.config import (
-    DATA_STEMS,
-    PipelineConfig,
-    latest_artifact,
-    latest_version,
-)
+from ML_Pipeline.artifacts import DATA_STEMS, latest_artifact, latest_version
+from ML_Pipeline.config import PipelineConfig
 from ML_Pipeline.utils import read_csv_any
 
 CSV = "ts,pickup_cluster,request_count\n0,0,0\n"

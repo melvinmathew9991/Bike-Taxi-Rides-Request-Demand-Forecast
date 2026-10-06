@@ -25,18 +25,14 @@ import pandas as pd
 import xgboost as xgb
 from joblib import dump
 
-# A checkout run needs src/ on the path; inside the image the package is
-# installed and this points nowhere, harmlessly (stdin has no file).
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-from ML_Pipeline.config import ModelRegistry  # noqa: E402
-from ML_Pipeline.features import (  # noqa: E402
+from ML_Pipeline.features import (
     CLUSTER_COL,
     TARGET_COL,
     TS_COL,
     ModelBundle,
     add_lag_features,
 )
+from ML_Pipeline.registry import ModelRegistry
 
 VERSION = "20210101_000000"
 CLUSTERS = 3

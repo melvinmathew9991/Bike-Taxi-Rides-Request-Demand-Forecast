@@ -7,7 +7,8 @@ import json
 import pandas as pd
 import pytest
 
-from ML_Pipeline.config import ModelRegistry, PipelineConfig
+from ML_Pipeline.config import PipelineConfig
+from ML_Pipeline.registry import ModelRegistry
 from ML_Pipeline.splitting import chronological_split, train_validation_split
 
 
