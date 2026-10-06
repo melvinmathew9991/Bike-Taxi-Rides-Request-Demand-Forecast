@@ -54,9 +54,9 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from ML_Pipeline import __version__
-from ML_Pipeline.features import CLUSTER_COL, TS_COL
-from ML_Pipeline.forecast import PREDICTION_COL, forecast_recursive
-from ML_Pipeline.serving import (
+from ML_Pipeline.modeling.features import CLUSTER_COL, TS_COL
+from ML_Pipeline.modeling.forecast import PREDICTION_COL, forecast_recursive
+from ML_Pipeline.serving.state import (
     MAX_HORIZON_STEPS,
     STALE_AFTER_DAYS,
     ServingState,
@@ -65,7 +65,7 @@ from ML_Pipeline.serving import (
 )
 
 logger = logging.getLogger(__name__)
-access_logger = logging.getLogger("ML_Pipeline.api.access")
+access_logger = logging.getLogger("ML_Pipeline.serving.api.access")
 
 # Uvicorn configures its own loggers but not the root, so without this the
 # module's INFO lines - the access log included - are dropped.

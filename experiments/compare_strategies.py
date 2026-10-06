@@ -29,7 +29,7 @@ import xgboost as xgb
 from common import BASE_PARAMS, FEATURES, LAGS, ROLLING_WINDOW, feature_names
 from joblib import load
 
-from ML_Pipeline.features import (
+from ML_Pipeline.modeling.features import (
     TARGET_COL,
     TS_COL,
     ModelBundle,
@@ -37,12 +37,12 @@ from ML_Pipeline.features import (
     add_lag_features,
     attach_cluster_centroids,
 )
-from ML_Pipeline.utils import read_csv_any
-from ML_Pipeline.validation import (
+from ML_Pipeline.modeling.validation import (
     rolling_origin_validate,
     rolling_origin_validate_recursive,
     summarise,
 )
+from ML_Pipeline.utils import read_csv_any
 
 logger = logging.getLogger("compare_strategies")
 

@@ -28,7 +28,7 @@ import pandas as pd
 from joblib import dump
 from sklearn.cluster import KMeans, MiniBatchKMeans
 
-from ML_Pipeline.features import (
+from ML_Pipeline.modeling.features import (
     CLUSTER_COL,
     add_calendar_features,
     build_demand_grid,
@@ -119,7 +119,7 @@ def data_prep_geospatial(
     coords = df[["pick_lat", "pick_lng"]].to_numpy()
 
     if run_cluster_diagnostics:
-        from ML_Pipeline.clustering import optimal_cluster
+        from ML_Pipeline.data.clustering import optimal_cluster
 
         logger.info("Running cluster-spacing diagnostics (expensive)...")
         optimal_cluster(coords)

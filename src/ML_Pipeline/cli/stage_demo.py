@@ -33,14 +33,10 @@ import numpy as np
 import pandas as pd
 from joblib import dump, load
 
-from ML_Pipeline.features import TS_COL
+from ML_Pipeline.governance import columns_outside_grid
+from ML_Pipeline.modeling.features import TS_COL
 from ML_Pipeline.registry import ModelRegistry
 
-#: Every column the demand grid may carry. Anything else stops the staging.
-GRID_COLUMNS = frozenset(
-    {"ts", "pickup_cluster", "request_count", "mins", "hour", "month", "quarter",
-     "dayofweek"}
-)
 #: Serving needs max(lag) of contiguous history - 7 days - plus the rolling
 #: window; two weeks leaves a margin and the forecast still starts where the
 #: real history ends.
@@ -84,7 +80,7 @@ def main(argv: list[str] | None = None, prog: str | None = None) -> int:
     # Grid: allow-listed columns, last N days.
     grid_path = args.output_dir / f"Data_Prepared_{version}.csv.gz"
     grid = pd.read_csv(grid_path)
-    unexpected = sorted(set(grid.columns) - GRID_COLUMNS)
+    unexpected = columns_outside_grid(grid.columns)
     if unexpected:
         raise SystemExit(
             f"{grid_path.name} has column(s) outside the aggregated set: "

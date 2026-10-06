@@ -19,9 +19,9 @@ import pandas as pd
 import pytest
 
 from ML_Pipeline.config import PipelineConfig
-from ML_Pipeline.evaluation import ModelEvaluator
-from ML_Pipeline.features import CLUSTER_COL, TARGET_COL, ModelBundle
-from ML_Pipeline.model_training import _run_deploy_gate, _season_length
+from ML_Pipeline.modeling.evaluation import ModelEvaluator
+from ML_Pipeline.modeling.features import CLUSTER_COL, TARGET_COL, ModelBundle
+from ML_Pipeline.modeling.training import _run_deploy_gate, _season_length
 
 WEEK_30MIN = 336
 

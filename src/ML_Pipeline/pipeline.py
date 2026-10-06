@@ -27,11 +27,11 @@ import pandas as pd
 from joblib import load
 
 from ML_Pipeline.config import PipelineConfig
-from ML_Pipeline.data_prep_advanced import data_prep_advanced
-from ML_Pipeline.data_prep_basic import data_prep_basic
-from ML_Pipeline.data_prep_geospatial import data_prep_geospatial
-from ML_Pipeline.model_training import model_training
-from ML_Pipeline.prediction_pipeline import prediction_pipeline
+from ML_Pipeline.data.prep_advanced import data_prep_advanced
+from ML_Pipeline.data.prep_basic import data_prep_basic
+from ML_Pipeline.data.prep_geospatial import data_prep_geospatial
+from ML_Pipeline.modeling.prediction import prediction_pipeline
+from ML_Pipeline.modeling.training import model_training
 from ML_Pipeline.utils import read_csv_any
 
 logger = logging.getLogger(__name__)

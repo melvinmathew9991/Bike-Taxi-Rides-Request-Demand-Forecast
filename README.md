@@ -113,7 +113,7 @@ results["predictions"]  # {'without_lag': DataFrame, 'with_lag': DataFrame}
 ```bash
 pip install -e ".[serving]"
 biketaxi run --raw-data data/raw_data.csv --promote   # train, gate, promote
-uvicorn ML_Pipeline.api:app --reload                  # serve
+uvicorn ML_Pipeline.serving.api:app --reload                  # serve
 ```
 
 The dashboard's **Model performance** page scores the promoted model: the deploy
@@ -122,7 +122,7 @@ what actually happened, MASE against the seasonal-naive baseline, and error per
 cluster with the clusters that lose to the baseline called out by name. It scores
 only demand the model was not fitted on, so a freshly refit model shows no
 accuracy figures until a week of new demand has arrived. It shares
-`ML_Pipeline.serving` with the API, so the two cannot disagree about which model is
+`ML_Pipeline.serving.state` with the API, so the two cannot disagree about which model is
 live.
 
 | Endpoint | Returns |
@@ -189,8 +189,8 @@ rollback is visible in the log as the model name changing.
 ### Forecasting from a saved model
 
 ```python
-from ML_Pipeline.features import ModelBundle
-from ML_Pipeline.forecast import forecast_recursive
+from ML_Pipeline.modeling.features import ModelBundle
+from ML_Pipeline.modeling.forecast import forecast_recursive
 
 bundle = ModelBundle.load_bundle("output/prediction_model_with_lag_<version>.joblib")
 forecast = forecast_recursive(bundle, history_panel, horizon)
@@ -204,28 +204,36 @@ mismatch raises rather than silently reordering columns.
 
 ```
 src/ML_Pipeline/
-  features.py             canonical feature engineering (shared by train & serve)
-  splitting.py            chronological train/test splitting
-  forecast.py             direct and recursive multi-step forecasting
   config.py               PipelineConfig
   registry.py             ModelRegistry: metrics, gate verdicts, promotion, rollback
   artifacts.py            artefact file names, and finding the newest run
-  pipeline.py             orchestrator
-  data_prep_basic.py      deduplication, type coercion, per-rider gaps
-  advanced_cleanup.py     business-rule filters
-  data_prep_advanced.py   cleaning stage + persistence
-  data_prep_geospatial.py clustering + aggregation to the demand grid
-  model_training.py       trains both model variants
-  xgb_model.py            XGBoost fitting with early stopping
-  evaluation.py           metrics, baselines, prediction validation
-  validation.py           rolling-origin validation
-  clustering.py           offline cluster-count diagnostics
-  api.py                  forecast serving API (FastAPI)
-  serving.py              the promoted model and its history, shared by API and dashboard
-  monitoring.py           health checks on the serving model
+  governance.py           where personal data stops: column lists and the checks that use them
+  pipeline.py             orchestrator for the stages below
+  data/                   raw bookings -> demand grid (the only place personal data exists)
+    prep_basic.py         deduplication, type coercion, per-rider gaps
+    shift_time.py         per-rider and per-pin gaps the cleaning rules read
+    cleaning_rules.py     business-rule filters (Rules 1-6)
+    prep_advanced.py      cleaning stage + persistence
+    prep_geospatial.py    clustering + aggregation to the demand grid
+    clustering.py         offline cluster-count diagnostics
+  modeling/
+    features.py           canonical feature engineering (shared by train & serve), ModelBundle
+    splitting.py          chronological train/test splitting
+    xgb_model.py          XGBoost fitting with early stopping, final refit
+    training.py           trains both model variants, runs the deploy gate
+    forecast.py           direct and recursive multi-step forecasting
+    prediction.py         forecasting stage
+    evaluation.py         metrics, baselines, per-cluster error
+    validation.py         rolling-origin validation
+  serving/
+    state.py              the promoted model and its history, shared by API, monitor and dashboard
+    api.py                forecast serving API (FastAPI)
+    monitoring.py         health checks on the serving model
+  dashboard/              Streamlit dashboard, one module per page
   cli/                    the `biketaxi` command: run, registry, monitor, stage-demo
+  features.py             compatibility only: lets models saved before the split load
 run_pipeline.py           kept so `python run_pipeline.py` still works; prefer `biketaxi run`
-streamlit_app.py          dashboard
+streamlit_app.py          dashboard entry point (`streamlit run streamlit_app.py`)
 scripts/                  developer tools
   smoke_run.py            manual full run against real data
   build_smoke_output.py   synthetic output directory for the container smoke test

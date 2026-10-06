@@ -232,7 +232,7 @@ horizon past two days, for the CLI and the API alike.
 
 Re-run on 2026-10-02 against the current lag set `(1, 2, 3, 48, 336)`. A single
 split on a series this non-stationary measures the fortnight you held out as much
-as the model, so `ML_Pipeline.validation` evaluates a *strategy* at five
+as the model, so `ML_Pipeline.modeling.validation` evaluates a *strategy* at five
 successive origins, always training on the past. Test window one week (one-step)
 or 24 hours (recursive); `MASE < 1` beats seasonal-naive.
 
@@ -656,7 +656,7 @@ consequences, and under-served areas are structurally the most exposed.
   stops beating it, ship the baseline.
 - Every trained model is recorded in `output/model_registry.json` with its
   metrics, parameters, feature list and training row count.
-- **Promotion is what reaches production.** `ML_Pipeline.api` serves the model
+- **Promotion is what reaches production.** `ML_Pipeline.serving.api` serves the model
   marked `production` in the registry, never simply the newest. `promote_model`
   refuses a model that failed its deploy gate *or* that carries no verdict, and
   `rollback()` restores the previously promoted one. `biketaxi run --promote`

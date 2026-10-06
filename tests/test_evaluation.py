@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ML_Pipeline.evaluation import ModelEvaluator, PredictionValidator
+from ML_Pipeline.modeling.evaluation import ModelEvaluator, PredictionValidator
 
 
 class TestCalculateMetrics:

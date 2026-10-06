@@ -18,7 +18,7 @@ from test_serving_api import build_output_dir
 
 from ML_Pipeline.cli.stage_demo import main as stage_main
 from ML_Pipeline.config import PipelineConfig
-from ML_Pipeline.serving import ServingState
+from ML_Pipeline.serving.state import ServingState
 
 
 @pytest.fixture

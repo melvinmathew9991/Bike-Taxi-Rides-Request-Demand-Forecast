@@ -56,7 +56,7 @@ they cannot memorise an individual's movements.
 
 ### Enforcement in code
 
-- `data_prep_advanced.PERSONAL_DATA_COLUMNS` names the personal fields and warns
+- `ML_Pipeline.governance.PERSONAL_DATA_COLUMNS` names the personal fields and warns
   on every write of booking-level data.
 - **The pipeline passes `drop_rider_id=True`**, so the rider identifier is not
   written to disk. The cleaning rules need it, and they have finished by that
@@ -74,15 +74,19 @@ they cannot memorise an individual's movements.
   ~0.1 m pickup and drop coordinates. Data minimisation is a DPDP Act
   obligation, not a preference, and `tests/test_integration.py`
   (`TestDataMinimisation`) now holds it.
-- `data_prep_advanced.CLEANED_COLUMNS` is an explicit allow-list, so a new
+- `ML_Pipeline.data.prep_advanced.CLEANED_COLUMNS` is an explicit allow-list, so a new
   upstream column cannot silently start being written to disk.
-- **Cleaning keeps only pickups inside Bengaluru** (`advanced_cleanup` Rule 6,
-  `BENGALURU_BBOX`). 156,740 cleaned bookings (4.05%) were in other cities;
+- **Cleaning keeps only pickups inside Bengaluru** (Rule 6 in
+  `ML_Pipeline.data.cleaning_rules`, `BENGALURU_BBOX`). 156,740 cleaned bookings (4.05%) were in other cities;
   the model is not for them, so they are no longer carried past cleaning.
-- `streamlit_app.assert_no_personal_data()` refuses to render any file
-  containing `number`, `pick_lat`, `pick_lng`, `drop_lat` or `drop_lng`. The
-  dashboard therefore cannot expose personal data even if pointed at a
-  booking-level file by mistake.
+- `ML_Pipeline.governance.assert_no_personal_data()` stops the dashboard
+  rendering any file containing `number`, `pick_lat`, `pick_lng`, `drop_lat` or
+  `drop_lng`. The dashboard therefore cannot expose personal data even if
+  pointed at a booking-level file by mistake.
+- `ML_Pipeline.governance` is the one place the personal-data columns and the
+  aggregated grid's allow-list are defined. The cleaning stage's write-time
+  warning, the dashboard's refusal and demo staging's upload check all read
+  them from there; `tests/test_governance.py` fails if any of them stops.
 
 ## 3. Handling rules
 

@@ -46,8 +46,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from ML_Pipeline.evaluation import ModelEvaluator
-from ML_Pipeline.features import (
+from ML_Pipeline.modeling.evaluation import ModelEvaluator
+from ML_Pipeline.modeling.features import (
     CLUSTER_COL,
     TARGET_COL,
     TS_COL,
@@ -55,7 +55,7 @@ from ML_Pipeline.features import (
     add_lag_features,
     attach_cluster_centroids,
 )
-from ML_Pipeline.serving import STALE_AFTER_DAYS, ServingState
+from ML_Pipeline.serving.state import STALE_AFTER_DAYS, ServingState
 
 #: Level-ratio band outside which the model fails its health check.
 MIN_LEVEL_RATIO = 0.90

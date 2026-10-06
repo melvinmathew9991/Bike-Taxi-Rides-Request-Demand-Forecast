@@ -30,8 +30,8 @@ import pytest
 from joblib import dump
 
 from ML_Pipeline.config import PipelineConfig
-from ML_Pipeline.evaluation import ModelEvaluator
-from ML_Pipeline.features import (
+from ML_Pipeline.modeling.evaluation import ModelEvaluator
+from ML_Pipeline.modeling.features import (
     CLUSTER_COL,
     TARGET_COL,
     TS_COL,
@@ -40,7 +40,7 @@ from ML_Pipeline.features import (
     add_lag_features,
 )
 from ML_Pipeline.registry import ModelRegistry
-from ML_Pipeline.serving import ServingState
+from ML_Pipeline.serving.state import ServingState
 
 SEASON = 336
 N_CLUSTERS = 3

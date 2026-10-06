@@ -22,10 +22,10 @@ import pytest
 from fastapi.testclient import TestClient
 from joblib import dump
 
-from ML_Pipeline.api import MAX_HORIZON_STEPS, STALE_AFTER_DAYS, ServingState, app
 from ML_Pipeline.config import PipelineConfig
-from ML_Pipeline.features import CLUSTER_COL, TARGET_COL, TS_COL, ModelBundle
+from ML_Pipeline.modeling.features import CLUSTER_COL, TARGET_COL, TS_COL, ModelBundle
 from ML_Pipeline.registry import ModelRegistry
+from ML_Pipeline.serving.api import MAX_HORIZON_STEPS, STALE_AFTER_DAYS, ServingState, app
 
 N_CLUSTERS = 3
 INTERVALS = 400  # > 336, so a weekly lag has history to read
@@ -92,7 +92,7 @@ def client(tmp_path, monkeypatch):
     """A TestClient wired to a freshly built output directory."""
     build_output_dir(tmp_path)
     state = ServingState(PipelineConfig(output_dir=str(tmp_path), logs_dir=str(tmp_path)))
-    monkeypatch.setattr("ML_Pipeline.api.get_state", lambda: state)
+    monkeypatch.setattr("ML_Pipeline.serving.api.get_state", lambda: state)
     return TestClient(app)
 
 
@@ -260,7 +260,7 @@ class TestStaleness:
         state = ServingState(
             PipelineConfig(output_dir=str(tmp_path), logs_dir=str(tmp_path))
         )
-        monkeypatch.setattr("ML_Pipeline.api.get_state", lambda: state)
+        monkeypatch.setattr("ML_Pipeline.serving.api.get_state", lambda: state)
         client = TestClient(app)
 
         assert client.get("/model").json()["stale"] is True
@@ -327,7 +327,7 @@ def add_promoted_model(tmp_path, name="xgb_with_lag_20260202_030405"):
 def live(tmp_path, monkeypatch):
     """The real process-wide state, pointed at a temporary output directory."""
     monkeypatch.setenv("BIKETAXI_OUTPUT_DIR", str(tmp_path))
-    monkeypatch.setattr("ML_Pipeline.serving._state", None)
+    monkeypatch.setattr("ML_Pipeline.serving.state._state", None)
     return TestClient(app)
 
 
@@ -380,10 +380,10 @@ class TestReload:
 
 class TestAccessLog:
     def test_each_request_is_logged_with_status_and_model(self, client, caplog):
-        with caplog.at_level("INFO", logger="ML_Pipeline.api.access"):
+        with caplog.at_level("INFO", logger="ML_Pipeline.serving.api.access"):
             client.get("/forecast?steps=2")
         line = next(r.getMessage() for r in caplog.records
-                    if r.name == "ML_Pipeline.api.access")
+                    if r.name == "ML_Pipeline.serving.api.access")
         assert line.startswith("GET /forecast 200 ")
         assert "model=xgb_with_lag_20260102_030405" in line
 
@@ -416,7 +416,7 @@ class TestNotReady:
         state = ServingState(
             PipelineConfig(output_dir=str(tmp_path), logs_dir=str(tmp_path))
         )
-        monkeypatch.setattr("ML_Pipeline.api.get_state", lambda: state)
+        monkeypatch.setattr("ML_Pipeline.serving.api.get_state", lambda: state)
         client = TestClient(app)
 
         assert client.get("/health").json()["ready"] is False

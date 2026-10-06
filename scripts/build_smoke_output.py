@@ -25,7 +25,7 @@ import pandas as pd
 import xgboost as xgb
 from joblib import dump
 
-from ML_Pipeline.features import (
+from ML_Pipeline.modeling.features import (
     CLUSTER_COL,
     TARGET_COL,
     TS_COL,

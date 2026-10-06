@@ -8,8 +8,8 @@ import pandas as pd
 import pytest
 
 from ML_Pipeline.config import PipelineConfig
+from ML_Pipeline.modeling.splitting import chronological_split, train_validation_split
 from ML_Pipeline.registry import ModelRegistry
-from ML_Pipeline.splitting import chronological_split, train_validation_split
 
 
 class TestChronologicalSplit:
@@ -109,7 +109,7 @@ class TestPipelineConfig:
         assert config.horizon_steps == steps
 
     def test_the_api_serves_the_same_limit(self):
-        from ML_Pipeline.serving import MAX_HORIZON_STEPS
+        from ML_Pipeline.serving.state import MAX_HORIZON_STEPS
 
         assert MAX_HORIZON_STEPS == 96
 

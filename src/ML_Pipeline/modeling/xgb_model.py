@@ -25,8 +25,8 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
-from ML_Pipeline.evaluation import ModelEvaluator
-from ML_Pipeline.features import ModelBundle
+from ML_Pipeline.modeling.evaluation import ModelEvaluator
+from ML_Pipeline.modeling.features import ModelBundle
 
 logger = logging.getLogger(__name__)
 

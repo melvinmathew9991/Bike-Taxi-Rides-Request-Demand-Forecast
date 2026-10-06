@@ -44,7 +44,7 @@ from common import BASE_PARAMS, FEATURES, LAGS, ROLLING_WINDOW
 from joblib import load
 
 from ML_Pipeline.config import PipelineConfig
-from ML_Pipeline.features import (
+from ML_Pipeline.modeling.features import (
     CLUSTER_COL,
     TARGET_COL,
     TS_COL,
@@ -52,7 +52,7 @@ from ML_Pipeline.features import (
     add_lag_features,
     attach_cluster_centroids,
 )
-from ML_Pipeline.splitting import chronological_split
+from ML_Pipeline.modeling.splitting import chronological_split
 from ML_Pipeline.utils import read_csv_any
 
 logger = logging.getLogger("measure_peak_error")
