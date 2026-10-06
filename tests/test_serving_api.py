@@ -23,8 +23,9 @@ from fastapi.testclient import TestClient
 from joblib import dump
 
 from ML_Pipeline.api import MAX_HORIZON_STEPS, STALE_AFTER_DAYS, ServingState, app
-from ML_Pipeline.config import ModelRegistry, PipelineConfig
+from ML_Pipeline.config import PipelineConfig
 from ML_Pipeline.features import CLUSTER_COL, TARGET_COL, TS_COL, ModelBundle
+from ML_Pipeline.registry import ModelRegistry
 
 N_CLUSTERS = 3
 INTERVALS = 400  # > 336, so a weekly lag has history to read

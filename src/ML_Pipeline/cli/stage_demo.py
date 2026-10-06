@@ -1,6 +1,5 @@
-#!/usr/bin/env python
 """
-Stage the files a hosted demo serves from - aggregated data only.
+`biketaxi stage-demo`: stage the files a hosted demo serves from - aggregated data only.
 
 The output directory mixes what serving needs with booking-level personal data
 (`clean_data_*`: rider identifiers and exact coordinates). Uploading it whole
@@ -18,7 +17,7 @@ would publish that to a bucket. This copies an allow-list instead:
 and refuses to stage a grid with any column outside the aggregated set.
 
 Usage:
-    python scripts/stage_demo_output.py --out deploy/.staging
+    biketaxi stage-demo --out deploy/.staging
 """
 
 from __future__ import annotations
@@ -34,10 +33,8 @@ import numpy as np
 import pandas as pd
 from joblib import dump, load
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-from ML_Pipeline.config import ModelRegistry  # noqa: E402
-from ML_Pipeline.features import TS_COL  # noqa: E402
+from ML_Pipeline.features import TS_COL
+from ML_Pipeline.registry import ModelRegistry
 
 #: Every column the demand grid may carry. Anything else stops the staging.
 GRID_COLUMNS = frozenset(
@@ -61,8 +58,11 @@ def _find(output_dir: Path, raw: str) -> Path:
     raise FileNotFoundError(f"Registry points at {raw}, which does not exist.")
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+def main(argv: list[str] | None = None, prog: str | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog=prog,
+        description="Stage the files a hosted demo serves from - aggregated data only.",
+    )
     parser.add_argument("--output-dir", type=Path, default=Path("output"))
     parser.add_argument("--out", type=Path, default=Path("deploy/.staging"))
     parser.add_argument("--history-days", type=int, default=DEFAULT_HISTORY_DAYS)

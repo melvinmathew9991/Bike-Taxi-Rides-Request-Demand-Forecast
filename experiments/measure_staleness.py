@@ -39,16 +39,12 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import xgboost as xgb
+from joblib import load
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT / "src"))
-
-import xgboost as xgb  # noqa: E402
-from joblib import load  # noqa: E402
-
-from ML_Pipeline.config import PipelineConfig  # noqa: E402
-from ML_Pipeline.evaluation import ModelEvaluator  # noqa: E402
-from ML_Pipeline.features import (  # noqa: E402
+from ML_Pipeline.config import PipelineConfig
+from ML_Pipeline.evaluation import ModelEvaluator
+from ML_Pipeline.features import (
     CLUSTER_COL,
     TARGET_COL,
     TS_COL,
@@ -58,8 +54,8 @@ from ML_Pipeline.features import (  # noqa: E402
     attach_cluster_centroids,
     build_feature_names,
 )
-from ML_Pipeline.forecast import PREDICTION_COL, forecast_recursive  # noqa: E402
-from ML_Pipeline.utils import read_csv_any  # noqa: E402
+from ML_Pipeline.forecast import PREDICTION_COL, forecast_recursive
+from ML_Pipeline.utils import read_csv_any
 
 logger = logging.getLogger("measure_staleness")
 

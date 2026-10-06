@@ -432,7 +432,7 @@ Conditions for use:
    case. Four weeks leaves two weeks of margin. Reproduce with
    `experiments/measure_staleness.py`.
 2. **Monitor `level_ratio` in production.** It degrades earliest and most
-   visibly, well before RMSE does. `scripts/monitor_model.py` scores the serving
+   visibly, well before RMSE does. `biketaxi monitor` scores the serving
    model on the latest week of demand it was not fitted on. It exits 3 when the
    model is past the cadence in condition 1, loses to seasonal-naive, or has a
    level ratio outside 0.90-1.10. The 0.90 floor sits between weeks four (0.92)
@@ -453,7 +453,7 @@ Conditions for use:
    decays as the new lags start consuming the model's own predictions, and by a
    one-week horizon the model only ties the baseline — see the horizon table
    above. Enforced: `PipelineConfig` refuses a `horizon_steps` past
-   `MAX_HORIZON_DAYS` (two days, 96 intervals), so `run_pipeline.py` exits 2,
+   `MAX_HORIZON_DAYS` (two days, 96 intervals), so `biketaxi run` exits 2,
    and the API caps requests at the same limit.
 4. **Supply 7 days of contiguous history per cluster.** The weekly lag makes
    this a hard precondition of recursive serving, not a preference — the
@@ -463,7 +463,7 @@ Conditions for use:
 5. **Do not use the without-lag model for anything but cold starts.** It has no
    channel carrying current demand level and loses to naive by 75%.
 6. **Run the baseline comparison at every retrain.** It runs as the deploy gate
-   at the end of every training pass, and `run_pipeline.py` exits 3 when the
+   at the end of every training pass, and `biketaxi run` exits 3 when the
    model loses. If the model stops beating seasonal-naive, ship the baseline.
 
 > An earlier revision of this card concluded "NOT READY / not deployable", based
@@ -641,7 +641,7 @@ consequences, and under-served areas are structurally the most exposed.
 ## Maintenance
 
 - **Retrain** at least every four weeks, and sooner when
-  `scripts/monitor_model.py` exits 3 - stale, losing to seasonal-naive, or a
+  `biketaxi monitor` exits 3 - stale, losing to seasonal-naive, or a
   level ratio outside 0.90-1.10. It scores the latest week the model was not
   fitted on; nothing schedules it yet, so run it weekly from cron or a
   scheduler wherever the output directory lives.
@@ -659,8 +659,8 @@ consequences, and under-served areas are structurally the most exposed.
 - **Promotion is what reaches production.** `ML_Pipeline.api` serves the model
   marked `production` in the registry, never simply the newest. `promote_model`
   refuses a model that failed its deploy gate *or* that carries no verdict, and
-  `rollback()` restores the previously promoted one. `run_pipeline.py --promote`
-  does it as part of a training run; `scripts/registry.py list | promote |
+  `rollback()` restores the previously promoted one. `biketaxi run --promote`
+  does it as part of a training run; `biketaxi registry list | promote |
   rollback` does it from the command line, and `POST /reload` makes a running
   API serve the change without a restart.
 - **The API caps the horizon at 96 intervals (two days)**, as does

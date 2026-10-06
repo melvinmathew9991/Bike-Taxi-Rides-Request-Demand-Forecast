@@ -6,23 +6,36 @@ commit messages.
 
 ## Unreleased
 
-### Changed
-- Experiment scripts moved from `scripts/` to `experiments/`, so `scripts/` holds
-  only operational tools. Their shared settings live in `experiments/common.py`
-  and are read from `PipelineConfig`. The XGBoost parameters used to be a
-  hand-written second copy in `compare_strategies.py`; the values are unchanged.
-- `Notebook/` renamed to `notebooks/`.
-- The package version is written once, in `ML_Pipeline.__version__`;
-  `pyproject.toml` and the API read it from there.
-
 ### Added
-- MIT licence, covering the code only.
-- This changelog, and `experiments/README.md`.
+- A `biketaxi` command (also `python -m ML_Pipeline`) with four subcommands:
+  `run`, `registry`, `monitor` and `stage-demo`. Installed as a console script
+  by `pip install -e .`.
 
-### Removed
-- `utils.geodestic_distance` and `utils.round_timestamp_30interval`, which
-  nothing called, and the `utils` re-export of two `features` functions that
-  nothing imported from `utils`.
+### Changed
+- `run_pipeline.py`, `scripts/registry.py`, `scripts/monitor_model.py` and
+  `scripts/stage_demo_output.py` moved into `ML_Pipeline.cli` (history kept).
+  `python run_pipeline.py` still works as a thin wrapper; the other three are
+  now `biketaxi registry`, `biketaxi monitor` and `biketaxi stage-demo`, with
+  the same options and exit codes.
+- No entry point puts `src/` on `sys.path` by hand any more; the package must be
+  installed, which both requirements files already do. The tests import it the
+  same way: `pythonpath` is gone from the pytest settings, and the tests that
+  loaded scripts by file path import modules instead.
+- `ModelRegistry` moved from `config.py` to `registry.py`, and the artefact
+  stems and `latest_artifact` / `latest_version` to `artifacts.py`. Saved models
+  reference only `ML_Pipeline.features`, so every existing model still loads.
+- `deploy/gcp_deploy.sh` stages through `python -m ML_Pipeline stage-demo`, and
+  checks the package is importable before creating anything in the cloud.
+
+## 2026-10-06
+
+- **#20** Experiment scripts moved from `scripts/` to `experiments/`, with their
+  shared settings in `experiments/common.py`, read from `PipelineConfig`
+  instead of a hand-written copy of the XGBoost parameters (values unchanged).
+  `Notebook/` renamed to `notebooks/`. The version is written once, in
+  `ML_Pipeline.__version__`. Two unused `utils` helpers and an unused re-export
+  removed. Added an MIT licence (code only), this changelog and
+  `experiments/README.md`.
 
 ## 2026-10-05
 

@@ -36,10 +36,15 @@ curl -H "X-API-Key: <key>" \
 
 ```bash
 pip install -r requirements-dev.txt        # or requirements.txt to run, not test
-pytest                                    # 329 tests, no data needed
-python run_pipeline.py --raw-data data/raw_data.csv --n-clusters 50
+pytest                                    # 340 tests, no data needed
+biketaxi run --raw-data data/raw_data.csv --n-clusters 50
 streamlit run streamlit_app.py            # dashboard, incl. model performance
 ```
+
+Both requirements files install the package itself in editable mode, which is
+what puts the `biketaxi` command on your path and lets the tests, the scripts
+and the dashboard import `ML_Pipeline`. Nothing adds `src/` to `sys.path` by
+hand, so work in an environment where the package is installed.
 
 The repository ships **no data** — it carries personal data and is git-ignored.
 The test suite builds synthetic data in-memory, so a fresh clone can run `pytest`
@@ -60,21 +65,33 @@ immediately. To supply your own input see [docs/DATA_SCHEMA.md](docs/DATA_SCHEMA
 
 ### Command line
 
+One command, `biketaxi`, covers every operational task (`python -m ML_Pipeline`
+is the same thing):
+
+| Command | Does |
+|---|---|
+| `biketaxi run` | train, gate and optionally promote the models |
+| `biketaxi registry` | list registered models, promote, roll back |
+| `biketaxi monitor` | health check on the serving model, for a scheduler |
+| `biketaxi stage-demo` | stage aggregated-only files for a hosted demo |
+
 ```bash
-python run_pipeline.py                          # full pipeline, defaults
-python run_pipeline.py --stages data features   # subset of stages
-python run_pipeline.py --n-clusters 100 --test-fraction 0.25 --horizon-steps 96
-python run_pipeline.py --config output/pipeline_config_20240101_120000.json
-python run_pipeline.py --config run.json --n-clusters 100   # flag wins
-python run_pipeline.py --promote                 # also promote it for serving
-python run_pipeline.py --allow-failed-gate       # exit 0 even if it loses
+biketaxi run                          # full pipeline, defaults
+biketaxi run --stages data features   # subset of stages
+biketaxi run --n-clusters 100 --test-fraction 0.25 --horizon-steps 96
+biketaxi run --config output/pipeline_config_20240101_120000.json
+biketaxi run --config run.json --n-clusters 100   # flag wins
+biketaxi run --promote                 # also promote it for serving
+biketaxi run --allow-failed-gate       # exit 0 even if it loses
 ```
 
-`run_pipeline.py` exits **3** when the trained model loses to its seasonal-naive
+`python run_pipeline.py` still works and takes the same flags.
+
+`biketaxi run` exits **3** when the trained model loses to its seasonal-naive
 baseline — a distinct code, because the run itself succeeded and only the model
 is inadequate.
 
-Every flag reaches the code it names; `run_pipeline.py --help` lists them all.
+Every flag reaches the code it names; `biketaxi run --help` lists them all.
 `--config` and the flags compose: the snapshot sets the starting point, and any
 flag you pass overrides it (and is logged as an override).
 
@@ -95,8 +112,8 @@ results["predictions"]  # {'without_lag': DataFrame, 'with_lag': DataFrame}
 
 ```bash
 pip install -e ".[serving]"
-python run_pipeline.py --raw-data data/raw_data.csv --promote   # train, gate, promote
-uvicorn ML_Pipeline.api:app --reload                            # serve
+biketaxi run --raw-data data/raw_data.csv --promote   # train, gate, promote
+uvicorn ML_Pipeline.api:app --reload                  # serve
 ```
 
 The dashboard's **Model performance** page scores the promoted model: the deploy
@@ -160,10 +177,10 @@ not exist as written are looked up by file name in the output directory.
 
 | Situation | Do this |
 |---|---|
-| A new model is trained | `python scripts/registry.py promote <name>` (refused if it failed its gate), then `POST /reload` |
-| The serving model misbehaves | `python scripts/registry.py rollback`, then `POST /reload` |
-| What is registered, and what is serving? | `python scripts/registry.py list`, or `GET /model` |
-| Is the serving model still healthy? | `python scripts/monitor_model.py` - exit 3 means retrain or ship the baseline |
+| A new model is trained | `biketaxi registry promote <name>` (refused if it failed its gate), then `POST /reload` |
+| The serving model misbehaves | `biketaxi registry rollback`, then `POST /reload` |
+| What is registered, and what is serving? | `biketaxi registry list`, or `GET /model` |
+| Is the serving model still healthy? | `biketaxi monitor` - exit 3 means retrain or ship the baseline |
 | A reload is refused (409) | the running model keeps serving; the response says what could not be loaded |
 
 Every request is logged with its status, duration and the serving model, so a
@@ -190,7 +207,9 @@ src/ML_Pipeline/
   features.py             canonical feature engineering (shared by train & serve)
   splitting.py            chronological train/test splitting
   forecast.py             direct and recursive multi-step forecasting
-  config.py               PipelineConfig, ModelRegistry
+  config.py               PipelineConfig
+  registry.py             ModelRegistry: metrics, gate verdicts, promotion, rollback
+  artifacts.py            artefact file names, and finding the newest run
   pipeline.py             orchestrator
   data_prep_basic.py      deduplication, type coercion, per-rider gaps
   advanced_cleanup.py     business-rule filters
@@ -204,12 +223,10 @@ src/ML_Pipeline/
   api.py                  forecast serving API (FastAPI)
   serving.py              the promoted model and its history, shared by API and dashboard
   monitoring.py           health checks on the serving model
-run_pipeline.py           CLI entry point
+  cli/                    the `biketaxi` command: run, registry, monitor, stage-demo
+run_pipeline.py           kept so `python run_pipeline.py` still works; prefer `biketaxi run`
 streamlit_app.py          dashboard
-scripts/                  operational tools
-  registry.py             list, promote and roll back models
-  monitor_model.py        scheduled health check on the serving model
-  stage_demo_output.py    aggregated-only files for a hosted demo
+scripts/                  developer tools
   smoke_run.py            manual full run against real data
   build_smoke_output.py   synthetic output directory for the container smoke test
 experiments/              one-off measurements behind the model card (see experiments/README.md)
@@ -291,7 +308,7 @@ last week" should not ship.
 > model was stale on the day it was trained" in the model card.
 >
 > The gate runs at the end of every training pass, records its verdict in the
-> model registry, and `run_pipeline.py` exits **3** when the model loses, so
+> model registry, and `biketaxi run` exits **3** when the model loses, so
 > automation can refuse to promote it. Error per cluster is reported alongside.
 > See [docs/MODEL_CARD.md](docs/MODEL_CARD.md) for the measured numbers.
 

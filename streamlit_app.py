@@ -22,7 +22,6 @@ coordinates into a browser session. See docs/DATA_GOVERNANCE.md.
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -31,14 +30,12 @@ import pandas as pd
 import streamlit as st
 from matplotlib.colors import LinearSegmentedColormap
 
-sys.path.insert(0, str(Path(__file__).parent / "src"))
-
-from ML_Pipeline.config import latest_artifact, latest_version  # noqa: E402
-from ML_Pipeline.evaluation import ModelEvaluator  # noqa: E402
-from ML_Pipeline.forecast import PREDICTION_COL, backtest_recursive  # noqa: E402
-from ML_Pipeline.monitoring import MissingFeaturesError, scoring_frame  # noqa: E402
-from ML_Pipeline.serving import ServingState  # noqa: E402
-from ML_Pipeline.utils import read_csv_any  # noqa: E402
+from ML_Pipeline.artifacts import latest_artifact, latest_version
+from ML_Pipeline.evaluation import ModelEvaluator
+from ML_Pipeline.forecast import PREDICTION_COL, backtest_recursive
+from ML_Pipeline.monitoring import MissingFeaturesError, scoring_frame
+from ML_Pipeline.serving import ServingState
+from ML_Pipeline.utils import read_csv_any
 
 # --------------------------------------------------------------------------
 # Data governance: columns that must never reach this dashboard
@@ -78,7 +75,7 @@ def resolve_data_path(data_type: str = "prepared") -> str:
     if found is not None:
         return str(found)
 
-    from ML_Pipeline.config import DATA_STEMS
+    from ML_Pipeline.artifacts import DATA_STEMS
 
     return str(Path(OUTPUT_DIR) / f"{DATA_STEMS.get(data_type, data_type)}.csv")
 
@@ -218,7 +215,7 @@ def render_empty_state(path: str) -> None:
         **To generate it**
 
         ```bash
-        python run_pipeline.py --stages data features
+        biketaxi run --stages data features
         ```
 
         That writes `output/Data_Prepared.csv` - the aggregated
@@ -500,7 +497,7 @@ def page_forecasts() -> None:
     if not available:
         st.warning("No forecast output found in `output/`.")
         st.markdown(
-            "Generate it with:\n\n```bash\npython run_pipeline.py --stages predict\n```"
+            "Generate it with:\n\n```bash\nbiketaxi run --stages predict\n```"
         )
         return
 
@@ -735,7 +732,7 @@ def page_model_performance() -> None:
             Train and promote one:
 
             ```bash
-            python run_pipeline.py --raw-data data/raw_data.csv --promote
+            biketaxi run --raw-data data/raw_data.csv --promote
             ```
 
             Promotion refuses a model that failed its deploy gate, or that carries

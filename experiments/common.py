@@ -15,14 +15,8 @@ experiments fit hundreds of models without early stopping, so they use a fixed
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT / "src"))
-
-from ML_Pipeline.config import PipelineConfig  # noqa: E402
-from ML_Pipeline.features import build_feature_names  # noqa: E402
+from ML_Pipeline.config import PipelineConfig
+from ML_Pipeline.features import build_feature_names
 
 _CONFIG = PipelineConfig()
 

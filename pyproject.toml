@@ -68,6 +68,11 @@ notebooks = [
     "seaborn>=0.12,<1.0",
 ]
 
+[project.scripts]
+# One command for every operational task: run, registry, monitor, stage-demo.
+# See ML_Pipeline/cli/__init__.py.
+biketaxi = "ML_Pipeline.cli:main"
+
 [tool.setuptools]
 package-dir = { "" = "src" }
 
@@ -82,9 +87,10 @@ where = ["src"]
 # old root-level test_pipeline.py -- a script that ran a full training job at
 # collection time and called sys.exit().
 testpaths = ["tests"]
-# "." puts the root-level run_pipeline.py on the path so its CLI wiring is
-# testable; collection still stays inside tests/ via testpaths above.
-pythonpath = ["src", "."]
+# No `pythonpath`: the tests import the installed package (`pip install -e .`,
+# which requirements-dev.txt does), the same way every entry point now does.
+# Putting src/ on the path here would let the suite pass on a checkout where the
+# package - and so the `biketaxi` command - is not installed at all.
 addopts = "-q --strict-markers"
 markers = [
     "slow: exercises model fitting; deselect with -m 'not slow'",

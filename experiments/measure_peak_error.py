@@ -39,16 +39,12 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import xgboost as xgb
+from common import BASE_PARAMS, FEATURES, LAGS, ROLLING_WINDOW
+from joblib import load
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT / "src"))
-
-import xgboost as xgb  # noqa: E402
-from common import BASE_PARAMS, FEATURES, LAGS, ROLLING_WINDOW  # noqa: E402
-from joblib import load  # noqa: E402
-
-from ML_Pipeline.config import PipelineConfig  # noqa: E402
-from ML_Pipeline.features import (  # noqa: E402
+from ML_Pipeline.config import PipelineConfig
+from ML_Pipeline.features import (
     CLUSTER_COL,
     TARGET_COL,
     TS_COL,
@@ -56,8 +52,8 @@ from ML_Pipeline.features import (  # noqa: E402
     add_lag_features,
     attach_cluster_centroids,
 )
-from ML_Pipeline.splitting import chronological_split  # noqa: E402
-from ML_Pipeline.utils import read_csv_any  # noqa: E402
+from ML_Pipeline.splitting import chronological_split
+from ML_Pipeline.utils import read_csv_any
 
 logger = logging.getLogger("measure_peak_error")
 

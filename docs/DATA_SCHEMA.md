@@ -76,7 +76,7 @@ directory, so a registry written on Windows loads in a Linux container.
 
 ## Monitoring report: `output/health.json`
 
-Written by `scripts/monitor_model.py --json output/health.json`.
+Written by `biketaxi monitor --json output/health.json`.
 
 | Field | Notes |
 |---|---|
@@ -88,7 +88,7 @@ Written by `scripts/monitor_model.py --json output/health.json`.
 
 ## Hosted demo files: `deploy/.staging/`
 
-Written by `scripts/stage_demo_output.py` and uploaded by `deploy/gcp_deploy.sh`.
+Written by `biketaxi stage-demo` and uploaded by `deploy/gcp_deploy.sh`.
 Aggregated only, and git-ignored:
 
 | File | Contents |
@@ -122,7 +122,7 @@ cannot infer from — a plain `read_csv` failed with
 To resolve the newest run without hardcoding a version:
 
 ```python
-from ML_Pipeline.config import latest_artifact, latest_version
+from ML_Pipeline.artifacts import latest_artifact, latest_version
 latest_version("output")                   # '20260102_030405'
 latest_artifact("output", "prepared")      # Path to the newest demand grid
 ```

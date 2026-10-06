@@ -120,7 +120,7 @@ cloud, and how it got there:
 | Secret Manager | the API key | the project owner, and the runtime service account — Editor does not include reading secrets |
 | Cloud Run (public URL) | forecasts and model metadata, behind the API key | anyone with the key; `/health` is open |
 
-- **Nothing booking-level is uploaded.** `scripts/stage_demo_output.py` copies
+- **Nothing booking-level is uploaded.** `biketaxi stage-demo` copies
   an allow-list, never `clean_data_*`, and refuses a grid with any column
   outside the aggregated set. `.gcloudignore` keeps `data/` and `output/` out of
   the source Cloud Build receives, and `.dockerignore` keeps them out of the
@@ -160,7 +160,7 @@ Because the target is fulfilled requests rather than latent demand, this is
 self-reinforcing. Areas that are already under-served are the ones most exposed.
 
 *Mitigation:* monitor forecast error by cluster over time
-(`scripts/monitor_model.py` reports it every run), and treat a cluster
+(`biketaxi monitor` reports it every run), and treat a cluster
 whose predicted demand is falling monotonically as a candidate feedback loop
 rather than a genuine trend. Where possible, log unfulfilled requests and search
 events, not just completed bookings, so the target approximates real demand.

@@ -47,5 +47,5 @@ WORKLOG.md
 # OS files
 .DS_Store
 Thumbs.db
-# Staged demo upload (scripts/stage_demo_output.py)
+# Staged demo upload (biketaxi stage-demo)
 /deploy/.staging/

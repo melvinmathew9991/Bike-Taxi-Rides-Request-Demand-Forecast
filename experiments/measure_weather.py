@@ -40,26 +40,22 @@ import logging
 import sys
 from pathlib import Path
 
+import holidays
 import numpy as np
 import pandas as pd
+import xgboost as xgb
+from common import BASE_PARAMS, FEATURES, LAGS, ROLLING_WINDOW
+from joblib import load
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT / "src"))
-
-import holidays  # noqa: E402
-import xgboost as xgb  # noqa: E402
-from common import BASE_PARAMS, FEATURES, LAGS, ROLLING_WINDOW  # noqa: E402
-from joblib import load  # noqa: E402
-
-from ML_Pipeline.features import (  # noqa: E402
+from ML_Pipeline.features import (
     TARGET_COL,
     TS_COL,
     add_calendar_features,
     add_lag_features,
     attach_cluster_centroids,
 )
-from ML_Pipeline.utils import read_csv_any  # noqa: E402
-from ML_Pipeline.validation import rolling_origins  # noqa: E402
+from ML_Pipeline.utils import read_csv_any
+from ML_Pipeline.validation import rolling_origins
 
 logger = logging.getLogger("measure_weather")
 
