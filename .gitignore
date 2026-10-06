@@ -44,6 +44,10 @@ ENV/
 # are in docs/MODEL_CARD.md.
 WORKLOG.md
 
+# Portfolio write-up and resume bullets. Local only, like WORKLOG.md: the
+# published account of the project is README.md and docs/.
+PROJECT_REPORT.md
+
 # OS files
 .DS_Store
 Thumbs.db
