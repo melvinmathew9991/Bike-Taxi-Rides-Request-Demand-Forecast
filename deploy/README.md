@@ -99,6 +99,11 @@ The data ends on 2021-03-26, so every forecast is for 2021-03-27 onwards, and
 28 days after the model was trained `/model` and every forecast start reporting
 it as stale. Both are accurate: a frozen demo is not a live service.
 
+The model deployed on 2026-10-05 predates prediction intervals (added
+2026-10-09), so its forecasts carry `lower` and `upper` as `null`. To serve
+them, retrain and promote locally (`biketaxi run --raw-data data/raw_data.csv
+--promote`), then re-run the deploy script.
+
 ## Tear down
 
 Everything lives in the one project:
