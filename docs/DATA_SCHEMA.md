@@ -27,7 +27,7 @@ Same schema. The serving window. `number` is not required for forecasting, only
 ## Intermediate: `output/clean_data_<version>.csv.gz`
 
 **Contains personal data.** Booking-level, post-cleaning. Columns as
-`data_prep_advanced.CLEANED_COLUMNS`, adding `geodesic_distance` (km),
+`data.prep_advanced.CLEANED_COLUMNS`, adding `geodesic_distance` (km),
 calendar features, and per-rider booking gaps.
 
 ## The aggregation boundary: `output/Data_Prepared_<version>.csv.gz`

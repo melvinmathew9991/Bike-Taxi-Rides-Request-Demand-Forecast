@@ -41,15 +41,15 @@ The pipeline has a hard boundary at the aggregation step:
 
 ```
 raw_data.csv            booking-level    PERSONAL DATA
-  -> data_prep_basic         booking-level    PERSONAL DATA
-  -> data_prep_advanced      booking-level    PERSONAL DATA  -> clean_data.csv.gz
-  -> data_prep_geospatial    AGGREGATED       ---- boundary ----
+  -> data.prep_basic         booking-level    PERSONAL DATA
+  -> data.prep_advanced      booking-level    PERSONAL DATA  -> clean_data.csv.gz
+  -> data.prep_geospatial    AGGREGATED       ---- boundary ----
   -> Data_Prepared.csv.gz    counts per cluster per 30 min    NOT personal data
   -> model training          aggregated only
   -> forecasts               aggregated only
 ```
 
-After `data_prep_geospatial`, every row is a count of requests in a geographic
+After `data.prep_geospatial`, every row is a count of requests in a geographic
 cluster during a half-hour interval. No identifier, no coordinate, no individual
 trip survives. **The trained models are fitted only on post-boundary data**, so
 they cannot memorise an individual's movements.
@@ -60,7 +60,7 @@ they cannot memorise an individual's movements.
   on every write of booking-level data.
 - **The pipeline passes `drop_rider_id=True`**, so the rider identifier is not
   written to disk. The cleaning rules need it, and they have finished by that
-  point; nothing downstream reads it, since `data_prep_geospatial` uses only
+  point; nothing downstream reads it, since `data.prep_geospatial` uses only
   `ts`, `pick_lat` and `pick_lng`.
 
   Scope, stated precisely: this removes the identifier that makes the coordinate
