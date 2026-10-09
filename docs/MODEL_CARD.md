@@ -722,8 +722,16 @@ consequences, and under-served areas are structurally the most exposed.
   `PipelineConfig` for the CLI, and reports data lag and model age against the
   four-week cadence, so the two conditions of use above are enforced at the
   serving boundary rather than left to the caller.
+- **Prediction intervals are recalibrated at every training run**, on the
+  held-out fit. Check `interval_holdout_coverage` in the registry (also on
+  `GET /model`) against the nominal `interval_level`; the reference run
+  measured 0.800 for 0.80.
+- **The input contract is checked whenever a booking file is loaded** (see
+  `docs/DATA_SCHEMA.md`). A file that breaks it stops the run rather than being
+  cleaned into a smaller dataset and trained on.
 - **The hosted demo** (Cloud Run, see `deploy/README.md`) serves
   `xgb_with_lag_20261005_142518`, promoted 2026-10-05: geofenced data, refit on
-  all data through 2021-03-26, deploy-gate MASE 0.804. It is frozen - the data
-  ends there - so it reports itself stale 28 days after training. Redeploy with
-  `deploy/gcp_deploy.sh` after promoting a new model.
+  all data through 2021-03-26, deploy-gate MASE 0.804. It predates prediction
+  intervals, so it serves `lower`/`upper` as null. It is frozen - the data ends
+  there - so it reports itself stale 28 days after training. Retrain, promote
+  and redeploy with `deploy/gcp_deploy.sh` to give it intervals.
