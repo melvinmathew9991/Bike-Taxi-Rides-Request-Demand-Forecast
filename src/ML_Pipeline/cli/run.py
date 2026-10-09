@@ -21,6 +21,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ML_Pipeline.config import PipelineConfig
+from ML_Pipeline.data.contract import InputContractError
 from ML_Pipeline.pipeline import MLPipeline
 from ML_Pipeline.registry import ModelRegistry
 
@@ -312,7 +313,8 @@ def main(argv: list[str] | None = None, prog: str | None = None) -> int:
             )
             return 3
         return 0
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, InputContractError) as exc:
+        # Bad input, not a pipeline failure: say what is wrong, without a trace.
         logger.error("%s", exc)
         return 2
     except Exception:

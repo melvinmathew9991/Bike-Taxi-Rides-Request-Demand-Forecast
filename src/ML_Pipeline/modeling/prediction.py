@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 from joblib import load
 
+from ML_Pipeline.data.contract import FORECAST_COLUMNS, check_bookings
 from ML_Pipeline.modeling.features import (
     CLUSTER_COL,
     TARGET_COL,
@@ -197,14 +198,7 @@ def prediction_pipeline(
 
     logger.info("Loading booking data from %s", cleaned_data_path)
     bookings = _read_bookings(cleaned_data_path)
-
-    required = {TS_COL, "pick_lat", "pick_lng"}
-    missing = sorted(required.difference(bookings.columns))
-    if missing:
-        raise KeyError(
-            f"Booking data is missing required column(s): {missing}. "
-            f"Found: {list(bookings.columns)}"
-        )
+    check_bookings(bookings, source=str(cleaned_data_path), required=FORECAST_COLUMNS)
 
     cluster_model = load(cluster_model_path)
     without_lag = ModelBundle.load_bundle(predict_without_lag_path)

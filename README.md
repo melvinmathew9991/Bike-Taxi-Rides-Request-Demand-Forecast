@@ -89,7 +89,9 @@ biketaxi run --allow-failed-gate       # exit 0 even if it loses
 
 `biketaxi run` exits **3** when the trained model loses to its seasonal-naive
 baseline — a distinct code, because the run itself succeeded and only the model
-is inadequate.
+is inadequate. It exits **2** on bad input: a missing file, or a booking file
+that breaks the input contract in `docs/DATA_SCHEMA.md`, which is checked as
+the file is loaded.
 
 Every flag reaches the code it names; `biketaxi run --help` lists them all.
 `--config` and the flags compose: the snapshot sets the starting point, and any
@@ -214,6 +216,7 @@ src/ML_Pipeline/
   governance.py           where personal data stops: column lists and the checks that use them
   pipeline.py             orchestrator for the stages below
   data/                   raw bookings -> demand grid (the only place personal data exists)
+    contract.py           the booking input contract, checked when a file is loaded
     prep_basic.py         deduplication, type coercion, per-rider gaps
     shift_time.py         per-rider and per-pin gaps the cleaning rules read
     cleaning_rules.py     business-rule filters (Rules 1-6)

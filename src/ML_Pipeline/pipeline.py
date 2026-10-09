@@ -27,6 +27,7 @@ import pandas as pd
 from joblib import load
 
 from ML_Pipeline.config import PipelineConfig
+from ML_Pipeline.data.contract import TRAINING_COLUMNS, check_bookings
 from ML_Pipeline.data.prep_advanced import data_prep_advanced
 from ML_Pipeline.data.prep_basic import data_prep_basic
 from ML_Pipeline.data.prep_geospatial import data_prep_geospatial
@@ -103,6 +104,7 @@ class MLPipeline:
                 "because it carries personal data; see docs/DATA_GOVERNANCE.md."
             )
         self.df_raw = read_csv_any(path)
+        check_bookings(self.df_raw, source=str(path), required=TRAINING_COLUMNS)
 
         logger.info(
             "Loaded %s rows x %d columns (%.1f MB): %s",

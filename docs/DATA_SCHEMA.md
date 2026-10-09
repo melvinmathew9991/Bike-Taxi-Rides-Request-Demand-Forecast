@@ -19,6 +19,20 @@ Gzip-compressed CSV, booking-level, one row per ride request.
 
 Reference dataset: 8,381,556 rows, 2020-03-26 to 2021-03-26, Bangalore.
 
+### Checked when it is loaded
+
+`ML_Pipeline.data.contract.check_bookings` runs on this file at stage 1, and on
+the test file when the prediction stage loads it (that one needs only `ts`,
+`pick_lat` and `pick_lng`). It tells a broken file from a few bad rows:
+
+| Stops the run (`biketaxi run` exits 2) | Logged, then dropped by cleaning |
+|---|---|
+| a required column is missing, or the file has no rows | |
+| more than 1% of rows fail any one rule: `ts` not in the format above, `number` not numeric, a coordinate missing or past +/-90 / +/-180 | up to 1% failing a rule - the reference file has 121 non-numeric `number`s |
+| more than half of pickups outside Bengaluru (`BENGALURU_BBOX`), which is how swapped `pick_lat` / `pick_lng` show up | the rest outside it - 2.8% of the reference file, dropped by Rule 6 |
+
+On the reference file the check takes about 10 seconds.
+
 ## Input: `data/cleaned_test_booking_data.csv`
 
 Same schema. The serving window. `number` is not required for forecasting, only

@@ -6,16 +6,14 @@ commit messages.
 
 ## Unreleased
 
-### Changed
-- The lag-free model forecasts only cold-start clusters: those without the 7
-  days of history the lag model reads before the horizon. It used to forecast
-  every cluster, and the dashboard offered it as an alternative forecast,
-  although it loses to seasonal-naive by 75%. `data_without_lag` is now usually
-  empty; the dashboard's forecasts page shows the lag model's forecast, and
-  cold-start clusters separately when there are any. A history too short for
-  every cluster is still refused rather than handed to the weaker model.
-
 ### Added
+- The booking input contract is checked when a file is loaded
+  (`ML_Pipeline.data.contract`). Stage 1 checks the raw file, and the
+  prediction stage checks the test file. A broken file stops the run and names
+  the problem, and `biketaxi run` exits 2. That covers a missing column, no
+  rows, more than 1% of rows failing a rule, or most pickups outside
+  Bengaluru, which is how swapped lat/lng show up. A few bad rows are logged,
+  and cleaning drops them as before. Written by hand, not with pandera.
 - Prediction intervals. Every recursive forecast carries an 80% interval,
   `request_count_lower` to `request_count_upper` in the forecast files and
   `lower`/`upper` in the API, calibrated on the held-out model's recursive
@@ -33,12 +31,14 @@ commit messages.
   either is missing. The API, the health check and the dashboard use it where
   they had relied on an earlier `ready` check that a type checker cannot see.
 
-### Fixed
-- Found by mypy: `compare_models` wrote a model's name into its float metrics
-  dict, and `train_xgb` read the tree count with `.get()`, so a missing value
-  would have surfaced later as `float(None)`.
-
 ### Changed
+- The lag-free model forecasts only cold-start clusters: those without the 7
+  days of history the lag model reads before the horizon. It used to forecast
+  every cluster, and the dashboard offered it as an alternative forecast,
+  although it loses to seasonal-naive by 75%. `data_without_lag` is now usually
+  empty; the dashboard's forecasts page shows the lag model's forecast, and
+  cold-start clusters separately when there are any. A history too short for
+  every cluster is still refused rather than handed to the weaker model.
 - The package is split into subpackages. Module moves, old -> new:
 
   | Was `ML_Pipeline.` | Now `ML_Pipeline.` |
@@ -57,6 +57,11 @@ commit messages.
 - The personal-data columns and the grid's allow-list are defined once, in the
   new `ML_Pipeline.governance`, and read from there by the cleaning stage, the
   dashboard and demo staging. They used to be written out in each of the three.
+
+### Fixed
+- Found by mypy: `compare_models` wrote a model's name into its float metrics
+  dict, and `train_xgb` read the tree count with `.get()`, so a missing value
+  would have surfaced later as `float(None)`.
 
 ### Kept working
 - `ML_Pipeline/features.py` remains as a one-line shim so that models pickled
