@@ -46,6 +46,7 @@ from ML_Pipeline.modeling.features import (
     build_feature_names,
 )
 from ML_Pipeline.modeling.forecast import PREDICTION_COL, backtest_recursive
+from ML_Pipeline.modeling.intervals import calibrate_intervals
 from ML_Pipeline.modeling.splitting import chronological_split, train_validation_split
 from ML_Pipeline.modeling.xgb_model import refit_on_all_data, train_xgb
 
@@ -100,7 +101,7 @@ def model_training(
     Returns:
         `{"without_lag": ModelBundle, "with_lag": ModelBundle}`.
     """
-    from ML_Pipeline.config import PipelineConfig
+    from ML_Pipeline.config import PipelineConfig, max_horizon_steps
 
     config = config or PipelineConfig()
     started = datetime.now()
@@ -212,6 +213,20 @@ def model_training(
     # remembered and run by hand. It now runs on every training pass and the
     # verdict is recorded on the bundle, which puts it in the registry too.
     _run_deploy_gate(bundle_lag, split_lag.test, config)
+
+    # Intervals are calibrated on the held-out fit for the same reason, and
+    # carried through the refit below with the rest of the bundle.
+    bundle_lag.intervals = calibrate_intervals(
+        bundle_lag, panel,
+        start=split_lag.test[TS_COL].min(),
+        days=config.interval_calibration_days,
+        n_origins=config.interval_origins,
+        steps=max_horizon_steps(config.interval_minutes),
+        level=config.interval_level,
+        centroids=centroids if "cluster_lat" in feats_lag else None,
+    )
+    if bundle_lag.intervals is not None:
+        bundle_lag.metrics.update(bundle_lag.intervals.summary())
 
     # Only now, with every measurement taken on the held-out fit, is the test
     # window folded in. Refitting earlier would score the model on rows it had

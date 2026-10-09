@@ -130,7 +130,7 @@ live.
 | `GET /health` | liveness, and whether a model **and its history** actually loaded |
 | `GET /model` | what is serving: features, lags, gate verdict, data lag, age, staleness |
 | `GET /clusters` | the clusters this model can forecast for |
-| `GET /forecast?steps=48&cluster=7` | demand per cluster per interval, forward from the last observation |
+| `GET /forecast?steps=48&cluster=7` | demand per cluster per interval, forward from the last observation, with an 80% interval (`lower`, `upper`) |
 | `POST /reload` | load a newly promoted model or refreshed grid without a restart (needs the API key) |
 
 With `BIKETAXI_API_KEY` set, every endpoint but `/health` needs it in an
@@ -153,6 +153,10 @@ rather than a preference:
   more than four weeks behind its data under-forecasts. Staleness is measured
   from where the model's training data ends (`data_lag_days`), not from when it
   was trained.
+- **Each forecast point carries an 80% interval in whole requests**, calibrated
+  on the model's own held-out recursive errors rather than assumed Poisson,
+  which covered only 56% at the busiest clusters. Plan supply from `upper`. See
+  "Prediction intervals" in the model card.
 
 ### Running it
 
@@ -222,6 +226,7 @@ src/ML_Pipeline/
     xgb_model.py          XGBoost fitting with early stopping, final refit
     training.py           trains both model variants, runs the deploy gate
     forecast.py           direct and recursive multi-step forecasting
+    intervals.py          prediction intervals calibrated on held-out recursive errors
     prediction.py         forecasting stage
     evaluation.py         metrics, baselines, per-cluster error
     validation.py         rolling-origin validation

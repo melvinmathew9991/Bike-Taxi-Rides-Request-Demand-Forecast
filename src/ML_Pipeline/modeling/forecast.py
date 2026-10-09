@@ -46,6 +46,7 @@ from ML_Pipeline.modeling.features import (
     add_calendar_features,
     attach_cluster_centroids,
 )
+from ML_Pipeline.modeling.intervals import add_intervals
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +125,7 @@ def forecast_recursive(
     clusters: Sequence[int] | None = None,
     centroids: np.ndarray | None = None,
     clip_min: float | None = 0.0,
+    with_intervals: bool = True,
 ) -> pd.DataFrame:
     """
     Forecast a horizon recursively with a lag-using model.
@@ -143,10 +145,13 @@ def forecast_recursive(
         centroids: `(n_clusters, 2)` centroid array, if the model uses them.
         clip_min: Floor applied to every prediction. `0.0` by default because
             the target is a non-negative count.
+        with_intervals: Add `request_count_lower` and `request_count_upper`
+            when the bundle carries an interval calibration.
 
     Returns:
         Long frame of `[ts, pickup_cluster, request_count_pred, is_forecast]`
-        plus the calendar/lag features used, one row per (horizon, cluster).
+        plus the calendar/lag features used, one row per (horizon, cluster),
+        and the interval bounds when added.
     """
     if not bundle.uses_lags:
         raise ValueError(
@@ -222,6 +227,11 @@ def forecast_recursive(
 
     result = pd.concat(records, ignore_index=True)
     result["is_forecast"] = True
+    if with_intervals and bundle.intervals is not None:
+        result = add_intervals(
+            result, bundle.intervals,
+            prediction_col=PREDICTION_COL, horizon_start=horizon[0], freq=freq,
+        )
     logger.info(
         "Recursive forecast: %d steps x %d clusters = %d predictions "
         "(%s to %s)",

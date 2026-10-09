@@ -24,6 +24,7 @@ from joblib import dump
 
 from ML_Pipeline.config import PipelineConfig
 from ML_Pipeline.modeling.features import CLUSTER_COL, TARGET_COL, TS_COL, ModelBundle
+from ML_Pipeline.modeling.intervals import IntervalCalibration
 from ML_Pipeline.registry import ModelRegistry
 from ML_Pipeline.serving.api import MAX_HORIZON_STEPS, STALE_AFTER_DAYS, ServingState, app
 
@@ -41,7 +42,9 @@ class Flat:
         return np.full(len(X), self.value, dtype="float64")
 
 
-def build_output_dir(tmp_path, *, gate_passed=True, trained_days_ago=0, promote=True):
+def build_output_dir(
+    tmp_path, *, gate_passed=True, trained_days_ago=0, promote=True, intervals=None
+):
     """A realistic output directory: a grid, a bundle, and a registry entry."""
     version = "20260102_030405"
     stamps = pd.date_range("2021-01-01", periods=INTERVALS, freq="30min")
@@ -68,7 +71,9 @@ def build_output_dir(tmp_path, *, gate_passed=True, trained_days_ago=0, promote=
             "baseline_mase": 0.8 if gate_passed else 1.2,
             "beats_seasonal_naive": 1.0 if gate_passed else 0.0,
             "clusters_losing_to_naive": 0.0 if gate_passed else 3.0,
+            **(intervals.summary() if intervals is not None else {}),
         },
+        intervals=intervals,
     )
     model_path = tmp_path / f"prediction_model_with_lag_{version}.joblib"
     dump(bundle, model_path)
@@ -252,6 +257,43 @@ class TestForecast:
 
     def test_a_one_day_horizon_carries_no_warning(self, client):
         assert client.get("/forecast?steps=48").json()["warnings"] == []
+
+
+class TestForecastIntervals:
+    CALIBRATION = IntervalCalibration(
+        level=0.8, horizon_edges=(12, 48, 96), volume_edges=(1.0, 3.0, 10.0, 25.0),
+        lower_z=((-1.0,) * 5,) * 3, upper_z=((1.5,) * 5,) * 3,
+        cell_rows=((100,) * 5,) * 3, origins=24,
+        window_start="2021-01-01T00:00:00", window_end="2021-01-08T00:00:00",
+        holdout_coverage=0.79,
+    )
+
+    def _client(self, tmp_path, monkeypatch, intervals):
+        build_output_dir(tmp_path, intervals=intervals)
+        state = ServingState(PipelineConfig(output_dir=str(tmp_path), logs_dir=str(tmp_path)))
+        monkeypatch.setattr("ML_Pipeline.serving.api.get_state", lambda: state)
+        return TestClient(app)
+
+    def test_each_point_carries_whole_request_bounds(self, tmp_path, monkeypatch):
+        client = self._client(tmp_path, monkeypatch, self.CALIBRATION)
+        body = client.get("/forecast?steps=4").json()
+        assert body["interval_level"] == 0.8
+        for point in body["forecast"]:
+            # Flat predicts 4.0: sqrt(4) = 2, so [4 - 2, 4 + 3].
+            assert (point["lower"], point["upper"]) == (2, 7)
+
+    def test_model_info_reports_the_measured_coverage(self, tmp_path, monkeypatch):
+        client = self._client(tmp_path, monkeypatch, self.CALIBRATION)
+        body = client.get("/model").json()
+        assert body["interval_level"] == 0.8
+        assert body["interval_holdout_coverage"] == 0.79
+
+    def test_a_model_without_intervals_still_serves(self, tmp_path, monkeypatch):
+        """Every model trained before intervals existed, including the demo's."""
+        client = self._client(tmp_path, monkeypatch, None)
+        body = client.get("/forecast?steps=2").json()
+        assert body["interval_level"] is None
+        assert all(p["lower"] is None and p["upper"] is None for p in body["forecast"])
 
 
 class TestStaleness:

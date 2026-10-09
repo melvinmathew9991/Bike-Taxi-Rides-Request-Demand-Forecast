@@ -129,6 +129,18 @@ class PipelineConfig:
     #: not exceed `MAX_HORIZON_DAYS`.
     horizon_steps: int | None = None
 
+    # --- Prediction intervals ---------------------------------------------
+    #: Nominal coverage of the forecast interval: 0.8 is the 10th to 90th
+    #: percentile. The upper bound is the figure to plan supply from.
+    interval_level: float = 0.8
+    #: Window after the training cut that calibration origins are spread over.
+    #: Four weeks is the retraining cadence, so the errors calibrated on are from
+    #: a model as stale as a deployed one gets.
+    interval_calibration_days: int = 28
+    #: Recursive backtests run to calibrate, each over the longest horizon the
+    #: API serves. 24 take about 30 seconds on the reference dataset.
+    interval_origins: int = 24
+
     # --- Logging / registry ---------------------------------------------
     log_level: str = "INFO"
     log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -180,6 +192,15 @@ class PipelineConfig:
             raise ValueError(
                 f"clustering_algorithm must be 'minibatch' or 'kmeans', "
                 f"got {self.clustering_algorithm!r}"
+            )
+        if not 0 < self.interval_level < 1:
+            raise ValueError(
+                f"interval_level must be in (0, 1), got {self.interval_level}"
+            )
+        if self.interval_calibration_days < 1 or self.interval_origins < 2:
+            raise ValueError(
+                "interval_calibration_days must be >= 1 and interval_origins >= 2, "
+                f"got {self.interval_calibration_days} and {self.interval_origins}"
             )
         if self.horizon_steps is not None:
             limit = max_horizon_steps(self.interval_minutes)
