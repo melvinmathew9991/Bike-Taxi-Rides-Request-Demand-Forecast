@@ -281,8 +281,7 @@ class ModelEvaluator:
         results = []
         for name, (y_true, y_pred) in models_dict.items():
             metrics = ModelEvaluator.calculate_metrics(y_true, y_pred)
-            metrics["model"] = name
-            results.append(metrics)
+            results.append({**metrics, "model": name})
         return pd.DataFrame(results).set_index("model")
 
     @staticmethod

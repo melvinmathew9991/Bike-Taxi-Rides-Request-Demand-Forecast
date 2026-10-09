@@ -27,6 +27,7 @@ from ML_Pipeline.serving.monitoring import (
     WARN,
     MissingFeaturesError,
     check_health,
+    scoring_frame,
 )
 from ML_Pipeline.serving.state import ServingState
 
@@ -247,6 +248,11 @@ class TestWhenThereIsNothingToCheck:
         state = state_for(tmp_path)
         with pytest.raises(ValueError, match="No model is ready"):
             check_health(state)
+
+    def test_scoring_a_state_that_is_not_ready_says_so(self, tmp_path):
+        """Not an AttributeError on None from somewhere inside the lag builder."""
+        with pytest.raises(RuntimeError, match="not ready"):
+            scoring_frame(state_for(tmp_path))
 
     def test_a_feature_the_grid_cannot_supply_is_named(self, tmp_path):
         build(tmp_path, Persistence(), features=[*FEATURES, "rainfall_mm"])

@@ -66,7 +66,7 @@ def _prepare_panel(
 
     if use_centroids and centroids is not None:
         panel = attach_cluster_centroids(panel, centroids)
-        cluster_features = ("cluster_lat", "cluster_lng")
+        cluster_features: tuple[str, ...] = ("cluster_lat", "cluster_lng")
         logger.info("Encoding clusters by centroid coordinates.")
     else:
         cluster_features = (CLUSTER_COL,)
