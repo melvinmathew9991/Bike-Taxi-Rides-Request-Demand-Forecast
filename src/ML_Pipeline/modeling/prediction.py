@@ -32,6 +32,7 @@ from ML_Pipeline.modeling.features import (
     validate_grid,
 )
 from ML_Pipeline.modeling.forecast import (
+    PREDICTION_COL,
     forecast_direct,
     forecast_recursive,
 )
@@ -110,6 +111,43 @@ def _seed_history(
     return combined
 
 
+def cold_start_clusters(
+    history: pd.DataFrame,
+    clusters: list[int],
+    horizon_start: pd.Timestamp,
+    *,
+    freq: str,
+    needed: int,
+) -> list[int]:
+    """
+    Clusters without `needed` observed intervals immediately before the horizon.
+
+    These are the only clusters the lag-free model forecasts. It has no channel
+    carrying current demand and loses to seasonal-naive by 75%, so for any
+    cluster with enough history the lag model is the forecast; the lag-free one
+    is the fallback for a cluster too new to have a week behind it - one added
+    by a cluster refit, say.
+
+    When the history as a whole is shorter than `needed`, no cluster is called
+    cold: that is a missing or wrong history source, not a new cluster, and the
+    recursive forecaster refuses it by name rather than having every cluster
+    quietly fall back to the weaker model.
+    """
+    step = pd.tseries.frequencies.to_offset(freq)
+    window_start = horizon_start - needed * step
+    stamps = pd.to_datetime(history[TS_COL])
+    recent = history[(stamps >= window_start) & (stamps < horizon_start)]
+    if recent[TS_COL].nunique() < needed:
+        return []
+    counts = recent.groupby(CLUSTER_COL)[TS_COL].nunique()
+    return [c for c in clusters if counts.get(c, 0) < needed]
+
+
+def _empty_forecast() -> pd.DataFrame:
+    """A forecast file with no rows, so every run writes both files."""
+    return pd.DataFrame(columns=[TS_COL, CLUSTER_COL, PREDICTION_COL, "is_forecast"])
+
+
 def _cluster_centroids(cluster_model: Any) -> np.ndarray | None:
     centers = getattr(cluster_model, "cluster_centers_", None)
     return None if centers is None else np.asarray(centers)
@@ -150,9 +188,10 @@ def prediction_pipeline(
         freq: Pandas offset alias. Defaults to `interval_minutes` minutes.
 
     Returns:
-        `{"without_lag": DataFrame, "with_lag": DataFrame}`. Both carry
-        `request_count_pred` and `is_forecast`; the caller no longer has to
-        guess which rows are predictions.
+        `{"without_lag": DataFrame, "with_lag": DataFrame}`. `with_lag` is the
+        forecast, for every cluster with a week of history behind the horizon.
+        `without_lag` covers only the cold-start clusters that lack it, and is
+        usually empty. Both carry `request_count_pred` and `is_forecast`.
     """
     freq = freq or f"{interval_minutes}min"
 
@@ -209,32 +248,50 @@ def prediction_pipeline(
         steps, horizon[0], horizon[-1], len(labels),
     )
 
-    use_centroids = centroids is not None and "cluster_lat" in without_lag.feature_names
-    direct = forecast_direct(
-        without_lag,
-        horizon,
-        labels,
-        centroids=centroids if use_centroids else None,
-    )
-    _write(direct, data_without_lag_path)
-
     # The recursive model reads its lags from history, so it needs depth the
     # test file does not have once the lag set reaches a week back.
     history = _seed_history(panel, history_path, freq)
 
+    needed = max(max(with_lag.lags), int(with_lag.rolling_window))
+    cold = cold_start_clusters(history, labels, horizon[0], freq=freq, needed=needed)
+    warm = [c for c in labels if c not in cold]
+    if cold:
+        logger.warning(
+            "%d cluster(s) lack %d intervals of history before the horizon and "
+            "get the lag-free model, which loses to seasonal-naive by 75%%: %s",
+            len(cold), needed, cold,
+        )
+
     use_centroids_lag = centroids is not None and "cluster_lat" in with_lag.feature_names
-    recursive = forecast_recursive(
-        with_lag,
-        history,
-        horizon,
-        clusters=labels,
-        centroids=centroids if use_centroids_lag else None,
+    recursive = (
+        forecast_recursive(
+            with_lag,
+            history,
+            horizon,
+            clusters=warm,
+            centroids=centroids if use_centroids_lag else None,
+        )
+        if warm
+        else _empty_forecast()
     )
     _write(recursive, data_with_lag_path)
 
+    use_centroids = centroids is not None and "cluster_lat" in without_lag.feature_names
+    direct = (
+        forecast_direct(
+            without_lag,
+            horizon,
+            cold,
+            centroids=centroids if use_centroids else None,
+        )
+        if cold
+        else _empty_forecast()
+    )
+    _write(direct, data_without_lag_path)
+
     logger.info(
-        "Forecasts complete: %d direct rows, %d recursive rows - all predicted.",
-        len(direct), len(recursive),
+        "Forecasts complete: %d recursive rows for %d clusters, %d cold-start "
+        "rows for %d.", len(recursive), len(warm), len(direct), len(cold),
     )
     return {"without_lag": direct, "with_lag": recursive}
 

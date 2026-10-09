@@ -10,7 +10,7 @@ cluster per 30-minute interval.
 | Features | cluster centroid (lat/lng), minute, hour, month, quarter, day-of-week | the above + `lag_1`, `lag_2`, `lag_3`, `lag_48` (yesterday), `lag_336` (last week), `rolling_mean` |
 | Applied | directly, any horizon | recursively, one step at a time |
 | Needs recent history | No | Yes — **7 days**, contiguous, per cluster (`max(lag)` = 336 intervals) |
-| Use when | forecasting far ahead, or history is unavailable | forecasting the next few intervals |
+| Used for | only clusters with less than 7 days of history (cold starts) | every other cluster - the forecast |
 
 Algorithm: XGBoost, `objective="count:poisson"`, tree count chosen by early
 stopping on a chronological validation tail.
@@ -461,7 +461,12 @@ Conditions for use:
    filled with zero and a warning, which matters more over a week than it did
    over 90 minutes.
 5. **Do not use the without-lag model for anything but cold starts.** It has no
-   channel carrying current demand level and loses to naive by 75%.
+   channel carrying current demand level and loses to naive by 75%. Enforced
+   since 2026-10-09: the prediction stage forecasts a cluster with it only when
+   that cluster lacks the 7 days of history the lag model reads, and the
+   dashboard shows those clusters separately rather than offering the model as
+   an alternative forecast. A history too short for every cluster is still
+   refused, not handed to the weaker model.
 6. **Run the baseline comparison at every retrain.** It runs as the deploy gate
    at the end of every training pass, and `biketaxi run` exits 3 when the
    model loses. If the model stops beating seasonal-naive, ship the baseline.

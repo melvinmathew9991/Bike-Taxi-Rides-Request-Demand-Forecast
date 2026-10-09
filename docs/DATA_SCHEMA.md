@@ -45,16 +45,20 @@ calendar features, and per-rider booking gaps.
 Rows = intervals x clusters, with zero-demand intervals present and equal to 0
 (not missing). `ML_Pipeline.modeling.features.validate_grid` reports whether this holds.
 
-## Output: `output/data_{with,without}_lag_<version>.csv`
+## Output: `output/data_{with,without}_lag_<version>.csv.gz`
 
-Forecasts. Adds:
+Forecasts. `data_with_lag` is **the** forecast, for every cluster with a week of
+history before the horizon. `data_without_lag` holds only cold-start clusters -
+those without that week - forecast by the lag-free model, and is usually empty
+(header only). No cluster appears in both. Adds:
 
 | Column | Notes |
 |---|---|
 | `request_count_pred` | The forecast. Never negative. |
 | `is_forecast` | `True` for every row — these files contain only predictions. |
+| `request_count_lower`, `request_count_upper` | With-lag file only: the 80% interval in whole requests, when the model carries a calibration. |
 | `cluster_lat`, `cluster_lng` | Cluster centroid, when centroid encoding is used. |
-| `lag_1..lag_3`, `rolling_mean` | With-lag file only: the inputs each step used. |
+| `lag_*`, `rolling_mean` | With-lag file only: the inputs each step used. |
 
 ## Models: `output/*.joblib`
 

@@ -92,14 +92,18 @@ class TestFullPipeline:
         assert set(predictions) == {"without_lag", "with_lag"}
         for frame in predictions.values():
             assert isinstance(frame, pd.DataFrame)
-            assert not frame.empty
+        assert not predictions["with_lag"].empty
 
     def test_every_horizon_row_is_forecast(self, workspace):
         """Regression: only 3 timestamps used to be predicted."""
-        for frame in workspace["results"]["predictions"].values():
-            assert len(frame) == 24 * N_CLUSTERS
-            assert frame["request_count_pred"].notna().all()
-            assert frame["is_forecast"].all()
+        frame = workspace["results"]["predictions"]["with_lag"]
+        assert len(frame) == 24 * N_CLUSTERS
+        assert frame["request_count_pred"].notna().all()
+        assert frame["is_forecast"].all()
+
+    def test_the_lag_free_model_forecasts_no_cluster_that_has_history(self, workspace):
+        """It loses to seasonal-naive by 75%; it is the cold-start fallback only."""
+        assert workspace["results"]["predictions"]["without_lag"].empty
 
     def test_the_recursive_forecast_carries_an_interval(self, workspace):
         frame = workspace["results"]["predictions"]["with_lag"]
@@ -151,8 +155,7 @@ class TestConfigIsHonoured:
         assert bundle.params["objective"] == "count:poisson"
 
     def test_horizon_steps_reaches_the_forecaster(self, workspace):
-        for frame in workspace["results"]["predictions"].values():
-            assert frame["ts"].nunique() == 24
+        assert workspace["results"]["predictions"]["with_lag"]["ts"].nunique() == 24
 
     def test_centroid_features_are_used_by_default(self, workspace):
         bundle = workspace["results"]["models"]["without_lag"]
@@ -271,6 +274,42 @@ class TestServingContract:
                 history_path=str(tmp_path / "does_not_exist.csv"),
                 horizon_steps=24,
             )
+
+    def test_a_cluster_without_history_gets_the_lag_free_model_alone(
+        self, workspace, tmp_path
+    ):
+        """
+        A cluster the history grid has never seen - one a cluster refit added,
+        say - has only the test file's six days, short of the week `lag_336`
+        reads. It is forecast by the lag-free model; every other cluster by the
+        lag model, and no cluster by both.
+        """
+        config = workspace["config"]
+        bundle = ModelBundle.load_bundle(config.get_model_path("with_lag"))
+        if max(bundle.lags) <= 288:
+            pytest.skip("configured lags fit inside the test file; no cluster is cold")
+
+        stamps = pd.date_range("2020-04-20", "2020-05-20", freq="30min")
+        grid = pd.DataFrame(
+            [(t, c, 1.0) for c in range(1, N_CLUSTERS) for t in stamps],
+            columns=["ts", "pickup_cluster", "request_count"],
+        )
+        history = tmp_path / "grid.csv.gz"
+        grid.to_csv(history, index=False, compression="gzip")
+
+        out = prediction_pipeline(
+            cleaned_data_path=config.test_data_path,
+            cluster_model_path=config.get_model_path("clustering"),
+            predict_without_lag_path=config.get_model_path("without_lag"),
+            predict_with_lag_path=config.get_model_path("with_lag"),
+            data_without_lag_path=str(tmp_path / "cold.csv.gz"),
+            data_with_lag_path=str(tmp_path / "warm.csv.gz"),
+            history_path=str(history),
+            horizon_steps=4,
+        )
+        assert set(out["without_lag"]["pickup_cluster"]) == {0}
+        assert set(out["with_lag"]["pickup_cluster"]) == set(range(1, N_CLUSTERS))
+        assert len(out["without_lag"]) == 4
 
     def test_missing_columns_are_reported_clearly(self, workspace, tmp_path):
         config = workspace["config"]
