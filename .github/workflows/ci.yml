@@ -54,6 +54,10 @@ jobs:
       - name: Lint
         run: ruff check .
 
+      # Settings and the checked paths are in pyproject.toml.
+      - name: Type check
+        run: mypy
+
       # No data is fetched or created anywhere above. The suite builds synthetic
       # data in memory, and this job running on a bare checkout is what holds
       # the README's "a fresh clone can run pytest immediately" to its word --

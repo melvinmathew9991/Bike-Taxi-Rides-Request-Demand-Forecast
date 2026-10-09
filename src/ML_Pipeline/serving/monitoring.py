@@ -85,9 +85,9 @@ def scoring_frame(state: ServingState) -> pd.DataFrame:
     supplied is a train/serve mismatch, and is raised by name rather than left to
     surface as an opaque `KeyError` from `predict`.
     """
-    bundle = state.bundle
+    bundle, history = state.loaded()
     frame = add_lag_features(
-        state.history, lags=bundle.lags, rolling_window=bundle.rolling_window
+        history, lags=bundle.lags, rolling_window=bundle.rolling_window
     )
     frame = add_calendar_features(frame, TS_COL)
     if state.centroids is not None and "cluster_lat" in bundle.feature_names:
@@ -190,13 +190,13 @@ def check_health(
         )
 
     frame = scoring_frame(state)
-    bundle = state.bundle
+    bundle, history = state.loaded()
     season = int(pd.Timedelta(days=7) / pd.Timedelta(bundle.freq))
 
     # The seasonal-naive forecast comes from the full history, so the window can
     # be exactly the span scored. Computed inside the window, its first week
     # would have no baseline.
-    history = state.history.sort_values([CLUSTER_COL, TS_COL])
+    history = history.sort_values([CLUSTER_COL, TS_COL])
     naive = history[[TS_COL, CLUSTER_COL]].assign(
         _naive=ModelEvaluator.seasonal_naive_baseline(history, season_length=season)
     )

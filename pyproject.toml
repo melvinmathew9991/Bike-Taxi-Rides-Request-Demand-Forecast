@@ -55,6 +55,7 @@ serving = [
 dev = [
     "pytest>=7.4,<9.0",
     "ruff>=0.4,<1.0",
+    "mypy>=2.3,<3.0",
     # fastapi.testclient needs httpx; without it the API tests cannot run.
     "httpx>=0.24,<1.0",
     # Karnataka holiday calendar for experiments/measure_weather.py. Not a pipeline
@@ -99,6 +100,23 @@ filterwarnings = [
     "error::FutureWarning",
     "ignore::DeprecationWarning",
 ]
+
+[tool.mypy]
+# The package is fully annotated; this holds it to its annotations. Checked on
+# the floor of `requires-python`, so a 3.11-only construct is caught.
+files = ["src/ML_Pipeline"]
+python_version = "3.10"
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[[tool.mypy.overrides]]
+# No type information shipped. pandas has a stub package, pandas-stubs, which is
+# deliberately not used: with it mypy reported 123 errors, over 100 of them
+# overload mismatches on ordinary pandas calls rather than defects. So pandas
+# values are unchecked (Any); what is checked is the package's own code - its
+# Optionals, its signatures, and the types it passes between its modules.
+module = ["joblib", "pandas.*", "scipy.*", "sklearn.*"]
+ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 100

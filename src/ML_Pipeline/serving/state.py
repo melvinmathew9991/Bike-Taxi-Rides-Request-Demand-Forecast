@@ -232,6 +232,17 @@ class ServingState:
     def ready(self) -> bool:
         return self.bundle is not None and self.history is not None
 
+    def loaded(self) -> tuple[ModelBundle, pd.DataFrame]:
+        """
+        The model and its history, for a caller that has checked `ready`.
+
+        `ready` cannot tell a type checker that both are present; this does, and
+        raises rather than handing back None to a caller that did not check.
+        """
+        if self.bundle is None or self.history is None:
+            raise RuntimeError("Serving state is not ready; check `ready` first.")
+        return self.bundle, self.history
+
     def clusters(self) -> list[int]:
         if self.history is None:
             return []

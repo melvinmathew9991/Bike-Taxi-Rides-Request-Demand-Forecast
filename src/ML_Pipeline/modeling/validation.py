@@ -69,7 +69,7 @@ class FoldResult:
 
 
 def rolling_origins(
-    stamps: Sequence[pd.Timestamp],
+    stamps: Sequence[pd.Timestamp] | np.ndarray,
     *,
     n_folds: int = 5,
     test_size: int,

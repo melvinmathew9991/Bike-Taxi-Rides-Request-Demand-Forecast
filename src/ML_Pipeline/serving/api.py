@@ -326,7 +326,7 @@ def forecast(
             + ("no demand grid found for history. " if state.history is None else ""),
         )
 
-    assert state.bundle is not None and state.history is not None  # for type checkers
+    bundle, history = state.loaded()
     available = state.clusters()
     requested = available if not cluster else sorted(set(cluster))
     unknown = [c for c in requested if c not in available]
@@ -337,15 +337,14 @@ def forecast(
                    f"{len(available)} clusters, 0-{max(available)}.",
         )
 
-    start = state.history_ends_at + pd.tseries.frequencies.to_offset(
-        state.bundle.freq
-    )
-    horizon = pd.date_range(start=start, periods=steps, freq=state.bundle.freq)
+    history_ends_at = history[TS_COL].max()
+    start = history_ends_at + pd.tseries.frequencies.to_offset(bundle.freq)
+    horizon = pd.date_range(start=start, periods=steps, freq=bundle.freq)
 
     try:
         predicted = forecast_recursive(
-            state.bundle,
-            state.history,
+            bundle,
+            history,
             horizon,
             clusters=available,
             centroids=state.centroids,
@@ -370,7 +369,7 @@ def forecast(
 
     return ForecastResponse(
         model_name=state.model_name or "unknown",
-        history_ends_at=state.history_ends_at,
+        history_ends_at=history_ends_at,
         horizon_steps=steps,
         model_trained_at=state.trained_at,
         model_age_days=state.age_days,

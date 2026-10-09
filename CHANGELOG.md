@@ -6,6 +6,19 @@ commit messages.
 
 ## Unreleased
 
+### Added
+- mypy in CI, over `src/ML_Pipeline`, with settings in `pyproject.toml`. pandas,
+  scikit-learn, scipy and joblib are left unchecked; `pandas-stubs` was tried
+  and not adopted (123 errors, nearly all overload strictness).
+- `ServingState.loaded()` returns the model and its history, and raises if
+  either is missing. The API, the health check and the dashboard use it where
+  they had relied on an earlier `ready` check that a type checker cannot see.
+
+### Fixed
+- Found by mypy: `compare_models` wrote a model's name into its float metrics
+  dict, and `train_xgb` read the tree count with `.get()`, so a missing value
+  would have surfaced later as `float(None)`.
+
 ### Changed
 - The package is split into subpackages. Module moves, old -> new:
 

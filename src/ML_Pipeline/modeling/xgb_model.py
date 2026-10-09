@@ -83,7 +83,7 @@ def train_xgb(
     params = {**DEFAULT_PARAMS, **(params or {})}
     has_validation = X_valid is not None and len(X_valid) > 0
     metrics: dict[str, float] = {}
-    selected_trees = params.get("n_estimators")
+    selected_trees = int(params["n_estimators"])
 
     if has_validation:
         params.setdefault("eval_metric", "rmse")

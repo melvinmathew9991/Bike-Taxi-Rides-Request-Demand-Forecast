@@ -58,8 +58,9 @@ def backtest_last_horizon(model_name: str, steps: int):
     if not state.ready:
         return None
     try:
+        bundle, history = state.loaded()
         return backtest_recursive(
-            state.bundle, state.history, horizon_steps=steps,
+            bundle, history, horizon_steps=steps,
             centroids=state.centroids,
         )
     except ValueError:
@@ -107,7 +108,8 @@ def evaluate_recent_window(model_name: str, weeks: int):
     window = window.reset_index(drop=True)
     if len(window) == 0:
         return None, None
-    return window, state.bundle.predict(window)
+    bundle, _ = state.loaded()
+    return window, bundle.predict(window)
 
 
 def _gate_tiles(state: ServingState) -> None:
@@ -233,9 +235,10 @@ def render(df: pd.DataFrame | None = None) -> None:
         )
         return
 
+    bundle, _ = state.loaded()
     st.caption(
-        f"Serving `{state.model_name}` - {len(state.bundle.feature_names)} features "
-        f"- lags {list(state.bundle.lags)} - history to "
+        f"Serving `{state.model_name}` - {len(bundle.feature_names)} features "
+        f"- lags {list(bundle.lags)} - history to "
         f"{state.history_ends_at:%Y-%m-%d %H:%M}"
     )
     _gate_tiles(state)
