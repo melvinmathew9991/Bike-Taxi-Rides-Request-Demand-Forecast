@@ -6,6 +6,15 @@ commit messages.
 
 ## Unreleased
 
+### Changed
+- The lag-free model forecasts only cold-start clusters: those without the 7
+  days of history the lag model reads before the horizon. It used to forecast
+  every cluster, and the dashboard offered it as an alternative forecast,
+  although it loses to seasonal-naive by 75%. `data_without_lag` is now usually
+  empty; the dashboard's forecasts page shows the lag model's forecast, and
+  cold-start clusters separately when there are any. A history too short for
+  every cluster is still refused rather than handed to the weaker model.
+
 ### Added
 - Prediction intervals. Every recursive forecast carries an 80% interval,
   `request_count_lower` to `request_count_upper` in the forecast files and

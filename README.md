@@ -105,7 +105,7 @@ config = PipelineConfig(raw_data_path="data/raw_data.csv", n_clusters=50)
 results = MLPipeline(config=config).run_full_pipeline()
 
 results["metrics"]      # {'without_lag': {...}, 'with_lag': {...}}
-results["predictions"]  # {'without_lag': DataFrame, 'with_lag': DataFrame}
+results["predictions"]  # {'with_lag': the forecast, 'without_lag': cold-start clusters only}
 ```
 
 ### Serving
@@ -253,7 +253,8 @@ notebooks/                original exploratory notebooks (historical record)
 Two variants are trained. **Without lag** uses calendar and geography only, so it
 applies to any future interval — but it has no channel carrying the current
 demand level, loses to a free baseline by 75%, and is useful only for cold
-starts. **With lag** adds recent demand and must be applied recursively,
+starts - which is all the prediction stage uses it for: a cluster without the
+week of history the lag model reads. **With lag** adds recent demand and must be applied recursively,
 compounding its own errors; `recursive_rmse` in the model bundle measures that
 honestly.
 
