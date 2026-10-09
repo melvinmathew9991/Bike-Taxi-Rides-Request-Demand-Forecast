@@ -5,11 +5,11 @@ booking logs, using XGBoost over calendar, geographic and lag features.
 
 ```
 raw bookings
-  -> clean & deduplicate            (data_prep_basic)
-  -> business-rule filtering        (data_prep_advanced)
-  -> cluster pickups & aggregate    (data_prep_geospatial)   <- personal data ends here
-  -> train two models               (model_training)
-  -> forecast a horizon             (prediction_pipeline)
+  -> clean & deduplicate            (data.prep_basic)
+  -> business-rule filtering        (data.prep_advanced)
+  -> cluster pickups & aggregate    (data.prep_geospatial)   <- personal data ends here
+  -> train two models               (modeling.training)
+  -> forecast a horizon             (modeling.prediction)
 ```
 
 ## Live demo
