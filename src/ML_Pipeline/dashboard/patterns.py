@@ -71,7 +71,10 @@ def render(df: pd.DataFrame) -> None:
     cbar = fig.colorbar(im, ax=ax, pad=0.015)
     cbar.set_label("Mean requests", color=INK_MUTED, fontsize=9)
     cbar.ax.tick_params(colors=INK_MUTED, labelsize=8, length=0)
-    cbar.outline.set_visible(False)
+    # The same object as `cbar.outline`. matplotlib 3.10's stubs, the last
+    # release for Python 3.10, type `outline` as the whole spine collection, so
+    # mypy rejects calling a method on it; the mapping entry is typed correctly.
+    cbar.ax.spines["outline"].set_visible(False)
     style_axes(ax)
     ax.grid(False)
     st.pyplot(fig)
