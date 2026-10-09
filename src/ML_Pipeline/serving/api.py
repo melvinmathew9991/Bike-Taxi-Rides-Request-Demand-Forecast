@@ -56,6 +56,7 @@ from pydantic import BaseModel, Field
 from ML_Pipeline import __version__
 from ML_Pipeline.modeling.features import CLUSTER_COL, TS_COL
 from ML_Pipeline.modeling.forecast import PREDICTION_COL, forecast_recursive
+from ML_Pipeline.modeling.intervals import LOWER_COL, UPPER_COL
 from ML_Pipeline.serving.state import (
     MAX_HORIZON_STEPS,
     STALE_AFTER_DAYS,
@@ -105,6 +106,16 @@ class ForecastPoint(BaseModel):
     ts: datetime
     pickup_cluster: int
     predicted_requests: float = Field(ge=0.0)
+    lower: int | None = Field(
+        default=None, ge=0,
+        description="Lower bound of the forecast interval, in whole requests. "
+        "None when the model carries no interval calibration.",
+    )
+    upper: int | None = Field(
+        default=None, ge=0,
+        description="Upper bound of the forecast interval - the figure to plan "
+        "supply from.",
+    )
 
 
 class ForecastResponse(BaseModel):
@@ -128,6 +139,11 @@ class ForecastResponse(BaseModel):
         "history does - past which it has been measured to lose to a "
         "seasonal-naive baseline."
     )
+    interval_level: float | None = Field(
+        default=None,
+        description="Nominal coverage of `lower`..`upper`, e.g. 0.8. Measured "
+        "coverage is in /model as `interval_holdout_coverage`.",
+    )
     warnings: list[str] = []
     forecast: list[ForecastPoint]
 
@@ -148,6 +164,12 @@ class ModelInfoResponse(BaseModel):
     clusters_losing_to_naive: int | None = None
     history_ends_at: datetime | None = None
     max_horizon_steps: int = MAX_HORIZON_STEPS
+    interval_level: float | None = None
+    interval_holdout_coverage: float | None = Field(
+        default=None,
+        description="Share of held-out demand inside the interval, measured on "
+        "backtests the calibration did not use.",
+    )
 
 
 app = FastAPI(
@@ -279,6 +301,8 @@ def model_info() -> ModelInfoResponse:
             else None
         ),
         history_ends_at=state.history_ends_at,
+        interval_level=metrics.get("interval_level"),
+        interval_holdout_coverage=metrics.get("interval_holdout_coverage"),
     )
 
 
@@ -355,6 +379,7 @@ def forecast(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     predicted = predicted[predicted[CLUSTER_COL].isin(requested)]
+    calibration = bundle.intervals if LOWER_COL in predicted.columns else None
 
     warnings: list[str] = []
     staleness = state.staleness_warning()
@@ -376,12 +401,15 @@ def forecast(
         model_data_through=state.data_through,
         data_lag_days=state.data_lag_days,
         stale=state.stale,
+        interval_level=calibration.level if calibration else None,
         warnings=warnings,
         forecast=[
             ForecastPoint(
                 ts=row[TS_COL],
                 pickup_cluster=int(row[CLUSTER_COL]),
                 predicted_requests=float(row[PREDICTION_COL]),
+                lower=int(row[LOWER_COL]) if calibration else None,
+                upper=int(row[UPPER_COL]) if calibration else None,
             )
             for _, row in predicted.iterrows()
         ],

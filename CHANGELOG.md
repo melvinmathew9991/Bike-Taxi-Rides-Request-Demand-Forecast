@@ -7,6 +7,16 @@ commit messages.
 ## Unreleased
 
 ### Added
+- Prediction intervals. Every recursive forecast carries an 80% interval,
+  `request_count_lower` to `request_count_upper` in the forecast files and
+  `lower`/`upper` in the API, calibrated on the held-out model's recursive
+  errors over the four weeks after its training cut. Covered 79.7% on
+  backtests the calibration did not use; Poisson quantiles covered 78.2%
+  overall and 55.5% at the busiest clusters. Stored on the bundle as
+  `intervals`; training takes about 30 seconds longer. Models trained before
+  this serve without intervals. New settings: `interval_level`,
+  `interval_calibration_days`, `interval_origins`.
+- `experiments/measure_intervals.py`.
 - mypy in CI, over `src/ML_Pipeline`, with settings in `pyproject.toml`. pandas,
   scikit-learn, scipy and joblib are left unchecked; `pandas-stubs` was tried
   and not adopted (123 errors, nearly all overload strictness).

@@ -472,6 +472,51 @@ Conditions for use:
 > rolling-origin results above supersede it. The 4.7x under-forecast reported
 > there is real but is a staleness artefact, and it is the reason for condition 1.
 
+### Prediction intervals
+
+Every recursive forecast carries an 80% interval, `request_count_lower` to
+`request_count_upper` (`lower`/`upper` in the API), in whole requests. Dispatch
+costs are asymmetric - an under-served interval costs more than an idle rider -
+so **the upper bound is the figure to plan supply from**, not the point
+forecast.
+
+**Poisson quantiles were the obvious interval and are wrong where it matters.**
+The model's objective is Poisson, but demand is over-dispersed (one step ahead,
+variance 1.4x the mean at moderate volume, 4.8x above 50 requests) and a growing
+series is under-forecast. So the intervals are calibrated instead
+(split-conformal): training backtests the held-out model recursively from 24
+origins over the four weeks after its cut, the retraining cadence, and records
+the 10th and 90th percentiles of the error scaled by `sqrt(prediction)`, per
+horizon band (0-6 h, 6-24 h, 24-48 h) and predicted-volume band (<=1, 1-3, 3-10,
+10-25, >25). They are stored on the bundle and applied to the refit model.
+
+Measured by `experiments/measure_intervals.py`: fitted before the split,
+calibrated on 12 origins in the first two weeks after it, scored on 12 origins
+in weeks three and four - 57,600 forecasts it never saw, as stale as a deployed
+model gets:
+
+| | Poisson 80% | calibrated 80% |
+|---|---|---|
+| coverage | 0.782 | **0.797** |
+| demand above the interval / below | 0.183 / 0.035 | 0.123 / 0.079 |
+| coverage, predicted <= 1 | 0.903 | 0.828 |
+| coverage, predicted 3-10 | 0.759 | 0.792 |
+| coverage, predicted 10-25 | 0.708 | 0.787 |
+| coverage, predicted > 25 | **0.555** | **0.732** |
+| coverage, 24-48 h ahead | 0.767 | 0.801 |
+| mean width (requests) | 5.7 | 6.5 |
+
+Coverage is flat across the horizon and close to nominal at every volume except
+the busiest band, which is the same weakness as the point forecast (limitation
+9). Misses still lean above. Each training run records its own check as
+`interval_holdout_coverage`: the later half of its origins scored against
+quantiles from the earlier half. On the reference data that was 0.800.
+
+Bounds are rounded inward (the lower up, the upper down), because the target is
+a whole count; rounding outward pushed a nominal 80% to 90%. Both bounds are
+widened if needed to include the rounded point forecast. Models trained before
+intervals existed - including the hosted demo's - serve without them.
+
 ### What the ratio target does
 
 Predicting `request_count / (rolling_mean + 1)` and multiplying back removes the
@@ -630,6 +675,11 @@ as a record of the original work.
    final refit narrows the gap but cannot close it. The ratio target narrows it
    further one step ahead but ties over a 24-hour horizon, so it is not
    adopted; see the ratio target section.
+10. **Intervals under-cover the busiest clusters.** The 80% interval covered
+    73% of intervals predicted above 25 requests, against 79-83% elsewhere, and
+    misses above outnumber misses below by about three to two. The upper bound
+    is a better planning figure than the point forecast, but at the busiest
+    clusters it is not yet a 90th percentile.
 
 ## Ethical considerations
 

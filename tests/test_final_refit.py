@@ -37,6 +37,9 @@ def _train(panel: pd.DataFrame, tmp_path, *, refit: bool):
         lag_features=(1, 2, 3), refit_on_all_data=refit, test_fraction=0.6,
         xgb_params={"n_estimators": 20, "max_depth": 3, "n_jobs": 2},
         early_stopping_rounds=5,
+        # Interval calibration is tested in test_intervals.py; the default 24
+        # backtests would add ~15 seconds to every training run here.
+        interval_origins=4,
     )
     return model_training(
         panel, str(tmp_path / "nolag.joblib"), str(tmp_path / "lag.joblib"),

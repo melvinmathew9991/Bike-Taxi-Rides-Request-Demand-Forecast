@@ -69,6 +69,7 @@ def workspace(tmp_path_factory):
             "n_estimators": 60, "random_state": 42, "n_jobs": 2,
         },
         early_stopping_rounds=10,
+        interval_origins=6,
     )
     pipeline = MLPipeline(config=config)
     results = pipeline.run_full_pipeline()
@@ -99,6 +100,14 @@ class TestFullPipeline:
             assert len(frame) == 24 * N_CLUSTERS
             assert frame["request_count_pred"].notna().all()
             assert frame["is_forecast"].all()
+
+    def test_the_recursive_forecast_carries_an_interval(self, workspace):
+        frame = workspace["results"]["predictions"]["with_lag"]
+        assert (frame["request_count_lower"] <= frame["request_count_upper"]).all()
+        assert (frame["request_count_lower"] >= 0).all()
+        metrics = workspace["results"]["models"]["with_lag"].metrics
+        assert metrics["interval_level"] == 0.8
+        assert 0 <= metrics["interval_holdout_coverage"] <= 1
 
     def test_no_negative_demand_is_forecast(self, workspace):
         for frame in workspace["results"]["predictions"].values():
@@ -289,7 +298,7 @@ class TestTrainingDirectly:
         config = PipelineConfig(
             output_dir=".", n_clusters=4, use_cluster_centroids=False,
             xgb_params={"n_estimators": 20, "max_depth": 3, "n_jobs": 2},
-            early_stopping_rounds=5,
+            early_stopping_rounds=5, interval_origins=4,
         )
         import tempfile
         from pathlib import Path

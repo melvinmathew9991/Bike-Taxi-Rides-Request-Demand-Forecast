@@ -28,11 +28,14 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
 from joblib import dump, load
+
+if TYPE_CHECKING:
+    from ML_Pipeline.modeling.intervals import IntervalCalibration
 
 logger = logging.getLogger(__name__)
 
@@ -405,6 +408,10 @@ class ModelBundle:
     #: before it existed.
     data_through: str = ""
     notes: str = ""
+    #: Prediction-interval quantiles, calibrated on the held-out fit. None on
+    #: bundles saved before intervals existed, and on lag-free models; their
+    #: forecasts carry no interval.
+    intervals: IntervalCalibration | None = None
 
     def design_matrix(self, df: pd.DataFrame) -> pd.DataFrame:
         """Select this model's features, in fit order, validating presence."""
