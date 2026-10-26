@@ -5,11 +5,12 @@ booking logs, using XGBoost over calendar, geographic and lag features.
 
 ```
 raw bookings
+  -> check the input contract       (data.contract)          <- a broken file stops here
   -> clean & deduplicate            (data.prep_basic)
   -> business-rule filtering        (data.prep_advanced)
   -> cluster pickups & aggregate    (data.prep_geospatial)   <- personal data ends here
   -> train two models               (modeling.training)
-  -> forecast a horizon             (modeling.prediction)
+  -> forecast a horizon             (modeling.prediction)  with an 80% interval
 ```
 
 ## Live demo
@@ -25,6 +26,9 @@ The forecast API runs on Google Cloud Run:
   frozen demo, not a live service, and after 28 days it reports itself stale.
 - It serves only aggregated files from a private bucket; no booking-level data
   is in the cloud. See [deploy/README.md](deploy/README.md).
+- Its model was trained on 2026-10-05, before prediction intervals existed, so
+  its forecasts return `lower` and `upper` as `null` until it is retrained and
+  redeployed.
 
 ```bash
 curl https://bike-taxi-forecast-mu5g6m6liq-el.a.run.app/health
@@ -36,7 +40,7 @@ curl -H "X-API-Key: <key>" \
 
 ```bash
 pip install -r requirements-dev.txt        # or requirements.txt to run, not test
-pytest                                    # 340 tests, no data needed
+pytest                                    # 393 tests, no data needed
 biketaxi run --raw-data data/raw_data.csv --n-clusters 50
 streamlit run streamlit_app.py            # dashboard, incl. model performance
 ```
@@ -341,4 +345,9 @@ not recorded; see [docs/DATA_GOVERNANCE.md](docs/DATA_GOVERNANCE.md).
 pytest                    # everything
 pytest -m "not slow"      # skip model fitting
 ruff check .              # lint
+mypy                      # type check; settings in pyproject.toml
 ```
+
+CI runs all three on Python 3.10-3.13, and builds and smoke-tests the
+container. `main` is protected: a pull request merges only when every one of
+those jobs passes.

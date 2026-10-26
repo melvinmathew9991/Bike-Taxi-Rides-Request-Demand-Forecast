@@ -4,42 +4,55 @@ What changed in each merged pull request, newest first. The measured effect of
 each change is in [docs/MODEL_CARD.md](docs/MODEL_CARD.md); the detail is in the
 commit messages.
 
-## Unreleased
+## 2026-10-09
 
-### Added
-- The booking input contract is checked when a file is loaded
-  (`ML_Pipeline.data.contract`). Stage 1 checks the raw file, and the
-  prediction stage checks the test file. A broken file stops the run and names
-  the problem, and `biketaxi run` exits 2. That covers a missing column, no
-  rows, more than 1% of rows failing a rule, or most pickups outside
-  Bengaluru, which is how swapped lat/lng show up. A few bad rows are logged,
-  and cleaning drops them as before. Written by hand, not with pandera.
-- Prediction intervals. Every recursive forecast carries an 80% interval,
-  `request_count_lower` to `request_count_upper` in the forecast files and
-  `lower`/`upper` in the API, calibrated on the held-out model's recursive
-  errors over the four weeks after its training cut. Covered 79.7% on
-  backtests the calibration did not use; Poisson quantiles covered 78.2%
-  overall and 55.5% at the busiest clusters. Stored on the bundle as
-  `intervals`; training takes about 30 seconds longer. Models trained before
-  this serve without intervals. New settings: `interval_level`,
-  `interval_calibration_days`, `interval_origins`.
-- `experiments/measure_intervals.py`.
-- mypy in CI, over `src/ML_Pipeline`, with settings in `pyproject.toml`. pandas,
-  scikit-learn, scipy and joblib are left unchecked; `pandas-stubs` was tried
-  and not adopted (123 errors, nearly all overload strictness).
-- `ServingState.loaded()` returns the model and its history, and raises if
-  either is missing. The API, the health check and the dashboard use it where
-  they had relied on an earlier `ready` check that a type checker cannot see.
+- **#30** Documents brought up to date at the end of the day: README (pipeline
+  diagram, test count, mypy, branch protection, the demo's missing
+  intervals), model card maintenance, data schema (bundle and registry
+  fields), the deploy guide, and this changelog's dated sections.
+- **#29** The booking input contract is checked when a file is loaded
+  (`ML_Pipeline.data.contract`): stage 1 checks the raw file, the prediction
+  stage the test file. A broken file stops the run with the reason and
+  `biketaxi run` exits 2 - a missing column, no rows, more than 1% of rows
+  failing a rule (timestamp format, rider id, coordinates), or most pickups
+  outside Bengaluru, which is how swapped lat/lng show up. A few bad rows are
+  logged and cleaning drops them as before. Written by hand, not with pandera.
+- **#28** The lag-free model forecasts only cold-start clusters - those without
+  the 7 days of history the lag model reads. It used to forecast every
+  cluster, and the dashboard offered it as an alternative, although it loses
+  to seasonal-naive by 75%. `data_without_lag` is now usually empty; the
+  dashboard shows cold-start clusters separately when there are any. A history
+  too short for every cluster is still refused.
+- **#27** Prediction intervals. Every recursive forecast carries an 80%
+  interval in whole requests - `request_count_lower`/`_upper` in the forecast
+  files, `lower`/`upper` in the API - calibrated on the held-out model's
+  recursive errors over the four weeks after its cut, by horizon and volume.
+  Covered 79.7% on backtests the calibration did not use, and 73.2% at the
+  busiest clusters, where Poisson quantiles covered 55.5%. Stored on the
+  bundle as `intervals`; models trained before this serve without them.
+  Training takes about 30 seconds longer. New settings `interval_level`,
+  `interval_calibration_days`, `interval_origins`; new
+  `experiments/measure_intervals.py`.
+- **#26** mypy passes on Python 3.10, where CI resolves matplotlib 3.10.9, whose
+  stubs mistype `Colorbar.outline`.
+- **#25** mypy in CI over `src/ML_Pipeline`; pandas, scikit-learn, scipy and
+  joblib left unchecked (`pandas-stubs` gave 123 errors, nearly all overload
+  strictness). New `ServingState.loaded()`, used where callers relied on a
+  `ready` check a type checker cannot see. Fixed two defects it found:
+  `compare_models` wrote a model name into a float metrics dict, and
+  `train_xgb` read the tree count with `.get()`, so a missing value would have
+  surfaced later as `float(None)`.
+- **#24** The local-only project report moved to `docs/`, still git-ignored.
+- **#23** The pipeline diagrams in the README and the data documents use the
+  post-split module names.
 
-### Changed
-- The lag-free model forecasts only cold-start clusters: those without the 7
-  days of history the lag model reads before the horizon. It used to forecast
-  every cluster, and the dashboard offered it as an alternative forecast,
-  although it loses to seasonal-naive by 75%. `data_without_lag` is now usually
-  empty; the dashboard's forecasts page shows the lag model's forecast, and
-  cold-start clusters separately when there are any. A history too short for
-  every cluster is still refused rather than handed to the weaker model.
-- The package is split into subpackages. Module moves, old -> new:
+Also on 2026-10-09, outside the code: `main` is protected, so a pull request
+merges only when all five CI jobs pass; the GitHub repository has a
+description, website and topics.
+
+## 2026-10-06
+
+- **#22** The package is split into subpackages. Module moves, old -> new:
 
   | Was `ML_Pipeline.` | Now `ML_Pipeline.` |
   |---|---|
@@ -50,26 +63,13 @@ commit messages.
   | `api`, `serving`, `monitoring` | `serving.api`, `serving.state`, `serving.monitoring` |
 
   Function and class names are unchanged. The API is now
-  `uvicorn ML_Pipeline.serving.api:app`, and the Dockerfile uses that.
-- The dashboard moved from one 969-line `streamlit_app.py` into
-  `ML_Pipeline.dashboard`, one module per page. `streamlit run streamlit_app.py`
-  is unchanged; the root file is now three lines.
-- The personal-data columns and the grid's allow-list are defined once, in the
-  new `ML_Pipeline.governance`, and read from there by the cleaning stage, the
-  dashboard and demo staging. They used to be written out in each of the three.
-
-### Fixed
-- Found by mypy: `compare_models` wrote a model's name into its float metrics
-  dict, and `train_xgb` read the tree count with `.get()`, so a missing value
-  would have surfaced later as `float(None)`.
-
-### Kept working
-- `ML_Pipeline/features.py` remains as a one-line shim so that models pickled
-  before the split, which name `ML_Pipeline.features.ModelBundle`, still load -
-  including the one the hosted demo serves. New models record the new path.
-
-## 2026-10-06
-
+  `uvicorn ML_Pipeline.serving.api:app`, and the Dockerfile uses that. The
+  dashboard moved from one 969-line `streamlit_app.py` into
+  `ML_Pipeline.dashboard`, one module per page; `streamlit run
+  streamlit_app.py` is unchanged. The personal-data columns and the grid's
+  allow-list are defined once, in the new `ML_Pipeline.governance`.
+  `ML_Pipeline/features.py` remains as a one-line shim so that models pickled
+  before the split - including the one the hosted demo serves - still load.
 - **#21** One `biketaxi` command (also `python -m ML_Pipeline`) with `run`,
   `registry`, `monitor` and `stage-demo`, replacing `run_pipeline.py` (kept as a
   wrapper) and three scripts. No entry point patches `sys.path`; the tests

@@ -78,6 +78,9 @@ those without that week - forecast by the lag-free model, and is usually empty
 
 `prediction_model_*.joblib` hold a `ML_Pipeline.modeling.features.ModelBundle` — the estimator plus
 its **ordered feature list**, lag settings, frequency, metrics and parameters.
+The lag model also carries `intervals`, the calibrated prediction-interval
+quantiles (`ML_Pipeline.modeling.intervals.IntervalCalibration`); it is `None`
+on bundles saved before 2026-10-09, which then forecast without intervals.
 Serving builds its design matrix from that list, so a train/serve mismatch
 raises instead of silently reordering columns.
 
@@ -88,7 +91,9 @@ cluster label for every training booking (`labels_`, 3.7 M on the reference
 data); serving reads only `cluster_centers_`.
 
 `model_registry.json` records every trained model, its metrics and deploy-gate
-verdict, and which one is `production`. Model paths are stored as the training
+verdict, and which one is `production`. Metrics include `interval_level`,
+`interval_origins` and `interval_holdout_coverage` for models trained with
+intervals. Model paths are stored as the training
 run wrote them; serving falls back to the same file name in its own output
 directory, so a registry written on Windows loads in a Linux container.
 
